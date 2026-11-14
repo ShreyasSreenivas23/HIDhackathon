@@ -20,6 +20,11 @@ const REASON_TEXT = {
   actions_not_completed: "Actions not completed",
   head_turn_not_seen: "Head turn not seen",
   otp_invalid: "Invalid code",
+  outside_schedule: "Outside permitted hours",
+  permission_disabled: "Campus permission disabled",
+  no_campus_permission: "No campus permission",
+  no_cached_permission: "No cached campus permission",
+  offline_no_local_biometric: "Secure local biometric verification unavailable",
 };
 
 const SIGNAL_LABEL = { minifas: "Texture CNN", dino: "DINOv2 head", device: "Screen device", planarity: "3D parallax" };
@@ -41,6 +46,13 @@ export default function ResultPanel({ result, clientMs }) {
         <span>{b.text}</span>
       </div>
       <p className="message">{result.message}</p>
+      {result.offline?.local === false && <p className="offline-note">Decision made locally: fail-closed offline policy</p>}
+      {result.schedule && (
+        <p className={`schedule-note ${result.schedule.authorized ? "scheduled" : "not-scheduled"}`}>
+          {result.schedule.authorized ? "Campus schedule: authorized" : `Campus schedule: ${result.schedule.reason.replaceAll("_", " ")}`}
+          {" · "}{result.schedule.timezone}
+        </p>
+      )}
       {result.identity?.user_id && result.decision === "ALLOW" && <p className="who">Welcome, {result.identity.user_id}</p>}
 
       <div className="stats">

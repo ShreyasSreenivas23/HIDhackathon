@@ -4,7 +4,7 @@ import ChallengePanel from "./components/ChallengePanel";
 import EnrollPanel from "./components/EnrollPanel";
 import OtpPanel from "./components/OtpPanel";
 import ResultPanel from "./components/ResultPanel";
-import { api, API_BASE } from "./lib/api";
+import { api, API_BASE, cacheSchedules, queueOfflineEvent, syncOfflineEvents } from "./lib/api";
 import { startCamera } from "./lib/camera";
 import { burst, grabFrame } from "./lib/capture";
 import { actionDone, analyzeFrame, initFaceTracker, QUALITY, qualityIssues } from "./lib/faceTracker";
@@ -33,18 +33,23 @@ export default function App() {
   const [phase, setPhaseState] = useState("loading");
   const [analysis, setAnalysis] = useState(null);
   const [result, setResult] = useState(null);
+  const resultRef = useRef(null);
   const [clientMs, setClientMs] = useState(0);
   const [challengeUi, setChallengeUi] = useState(null);
   const [health, setHealth] = useState(null);
+  const [online, setOnline] = useState(true);
+  const [pendingSync, setPendingSync] = useState(0);
   const [error, setError] = useState("");
 
   const setPhase = (p) => { phaseRef.current = p; setPhaseState(p); };
 
   const showResult = useCallback((r, ms) => {
+    resultRef.current = r;
     setResult(r);
     setClientMs(ms);
     if (r.decision === "REQUEST_VERIFICATION" && r.challenge) return startChallenge(r.challenge);
     setPhase("result");
+    if (r.offline?.local === false) return;
     const offerOtp = r.decision === "DENY" && r.reasons?.includes("challenge_failed");
     setTimeout(() => {
       if (phaseRef.current !== "result") return;
@@ -63,9 +68,33 @@ export default function App() {
       const frames = await burst(videoRef.current, 5, 100);
       const r = await api.verify(frames, { blur: a.blur, brightness: a.brightness, face_px: a.facePx, yaw: a.yaw });
       setError("");
+      setOnline(true);
       showResult(r, performance.now() - t0);
     } catch (e) {
-      // show the error and pause before rescanning, instead of hammering the API in a tight loop
+      if (e.offline) {
+        setOnline(false);
+        const eventId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+        queueOfflineEvent({
+          event_id: eventId,
+          user_id: null,
+          decision: "DENY",
+          occurred_at: new Date().toISOString(),
+          payload: { reason: "central_service_unavailable" },
+        });
+        setPendingSync((count) => count + 1);
+        showResult({
+          decision: "DENY",
+          confidence: 1,
+          reasons: ["offline_no_local_biometric"],
+          message: "OFFLINE MODE — access denied until secure local verification is available",
+          liveness: {},
+          identity: {},
+          quality: { ok: true },
+          timings_ms: {},
+          offline: { local: false, sync_status: "pending", event_id: eventId },
+        }, performance.now() - t0);
+        return;
+      }
       setError(e.message || String(e));
       setPhase("error");
       setTimeout(() => { goodSinceRef.current = null; if (phaseRef.current === "error") setPhase("scanning"); }, 3000);
@@ -118,7 +147,20 @@ export default function App() {
   // ---------------------------------------------------------------- camera + tracking loop
   useEffect(() => {
     let raf, stopped = false, lastUi = 0;
-    api.health().then(setHealth).catch(() => setHealth({ ok: false }));
+    const checkHealth = () => api.health().then((value) => {
+      setHealth(value);
+      setOnline(true);
+      cacheSchedules(value.schedules || []);
+      if (phaseRef.current === "result" && resultRef.current?.offline?.local === false) {
+        setResult(null);
+        resultRef.current = null;
+        goodSinceRef.current = null;
+        setPhase("scanning");
+      }
+      return syncOfflineEvents().then((sync) => setPendingSync(sync.pending || value.offline_events_pending || 0)).catch(() => {});
+    }).catch(() => { setOnline(false); setHealth({ ok: false }); });
+    checkHealth();
+    const healthTimer = setInterval(checkHealth, 5000);
     (async () => {
       try {
         await startCamera(videoRef.current);
@@ -153,7 +195,7 @@ export default function App() {
       };
       loop();
     })();
-    return () => { stopped = true; cancelAnimationFrame(raf); };
+    return () => { stopped = true; cancelAnimationFrame(raf); clearInterval(healthTimer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -174,8 +216,9 @@ export default function App() {
           <button className={tab === "kiosk" ? "on" : ""} onClick={() => setTab("kiosk")}>Kiosk</button>
           <button className={tab === "enroll" ? "on" : ""} onClick={() => setTab("enroll")}>Enroll</button>
         </nav>
-        <div className={`health ${health?.ok ? "ok" : "bad"}`}>
-          {health ? (health.ok ? (health.stub_mode ? "API: stub mode" : `API ok · ${health.enrolled} enrolled`) : `API offline (${API_BASE})`) : "…"}
+        <div className={`health ${online && health?.ok ? "ok" : "bad"}`}>
+          {online && health?.ok ? (health.stub_mode ? "ONLINE · stub mode" : `ONLINE · ${health.enrolled} enrolled`) : `OFFLINE MODE (${API_BASE})`}
+          {pendingSync > 0 && <span className="sync"> · {pendingSync} pending sync</span>}
         </div>
       </header>
 

@@ -11,8 +11,9 @@ c = TestClient(app)
 
 def test_stub_flow():
     assert c.get("/health").json()["stub_mode"] is True
-    seen = {c.post("/verify", json={"frames": ["x"]}).json()["decision"] for _ in range(3)}
-    assert seen == {"ALLOW", "DENY", "REQUEST_VERIFICATION"}
+    c.post("/enroll", json={"user_id": "demo_user", "frames": ["x"]})
+    assert c.post("/verify", json={"frames": ["x"]}).json()["decision"] == "ALLOW"
+    assert c.post("/verify?force=DENY", json={"frames": ["x"]}).json()["decision"] == "DENY"
     r = c.post("/verify?force=REQUEST_VERIFICATION", json={"frames": ["x"]}).json()
     assert r["challenge"]["actions"]
     assert c.post("/challenge", json={"nonce": "stub01", "frames": ["x"]}).json()["decision"] == "ALLOW"
