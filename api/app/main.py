@@ -29,7 +29,8 @@ if not settings.stub_mode:
     from .pipeline import Pipeline
 
     pipeline = Pipeline(settings)
-    log.info("components: %s", pipeline.components())
+    pipeline.warmup()
+    log.info("components: %s  face backend: %s", pipeline.components(), pipeline.faces.name)
 challenges = ChallengeManager()
 th = settings.thresholds
 

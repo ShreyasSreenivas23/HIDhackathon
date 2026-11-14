@@ -44,8 +44,8 @@ def _nose_parallax(ref: np.ndarray, cur: np.ndarray) -> float | None:
 
 def planarity_score(
     kps_list: list,
-    live_parallax: float = 0.05,   # nose parallax / eye distance that counts as clear 3D evidence
-    spoof_deform: float = 0.03,    # plane deformation / eye distance that proves the plane really moved
+    live_parallax: float = 0.06,   # nose parallax / eye distance = clear 3D (YuNet noise reaches ~0.025)
+    spoof_deform: float = 0.12,    # plane deformation / eye distance = plane clearly tilted (noise reaches ~0.05)
 ) -> float | None:
     """kps_list: per-frame 5x2 keypoints (None if no face). Returns P(live) in [0,1] or None."""
     pts = [np.asarray(k, dtype=np.float32) for k in kps_list if k is not None]
@@ -53,18 +53,18 @@ def planarity_score(
         return None
     ref = pts[0]
     eye_dist = float(np.linalg.norm(ref[1] - ref[0])) + 1e-6
-    best: float | None = None
+    ns, ds = [], []
     for cur in pts[1:]:
         par = _nose_parallax(ref, cur)
-        if par is None:
-            continue
-        n = par / eye_dist
-        d = _deformation(ref[PLANAR_IDX], cur[PLANAR_IDX]) / eye_dist
-        if n >= live_parallax:
-            s = min(1.0, 0.5 + 5.0 * n)                 # 0.05 -> 0.75, 0.10 -> 1.0
-        elif d >= spoof_deform:
-            s = 0.5 * min(1.0, n / (2.0 * d))           # plane moved, nose didn't -> ~0
-        else:
-            continue
-        best = s if best is None else max(best, s)
-    return best
+        if par is not None:
+            ns.append(par / eye_dist)
+            ds.append(_deformation(ref[PLANAR_IDX], cur[PLANAR_IDX]) / eye_dist)
+    if len(ns) < 2:
+        return None
+    # MEDIAN over frames: a single noisy landmark frame must not decide (max() amplified noise)
+    n, d = float(np.median(ns)), float(np.median(ds))
+    if n >= live_parallax:
+        return min(1.0, 0.5 + 5.0 * n)                  # 0.06 -> 0.8, 0.10 -> 1.0
+    if d >= spoof_deform:
+        return 0.5 * min(1.0, n / (2.0 * d))            # plane clearly tilted, nose followed it -> ~0
+    return None

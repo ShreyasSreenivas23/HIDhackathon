@@ -58,6 +58,22 @@ class Pipeline:
         self.device = DeviceDetector(settings.yolo_model) if settings.enable_device else None
         self.store = make_store(settings)
 
+    def warmup(self) -> None:
+        """Run every model once at startup so the first real request isn't slow (YOLO's first call ~2 s)."""
+        dummy = np.full((480, 640, 3), 127, np.uint8)
+        box = [220.0, 140.0, 420.0, 380.0]
+        try:
+            if self.faces.available:
+                self.faces.detect(dummy)
+            if self.minifas and self.minifas.available:
+                self.minifas.score([dummy], [box])
+            if self.device and self.device.available:
+                self.device.score(dummy, box)
+            if self.dino and self.dino.available:
+                self.dino.score([dummy], [box])
+        except Exception as e:
+            log.warning("warmup failed: %s", e)
+
     def components(self) -> dict[str, bool]:
         return {
             "detector": self.faces.available,

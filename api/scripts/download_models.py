@@ -14,6 +14,9 @@ MODELS = Path(__file__).resolve().parent.parent / "models"
 FILES = {
     "minifas_best_model.onnx": "https://github.com/facenox/face-antispoof-onnx/raw/main/models/best/98.20/best_model.onnx",
     "yolo11n.pt": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt",
+    # OpenCV face backend (works natively on Windows; used when insightface is not installed)
+    "face_detection_yunet_2023mar.onnx": "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+    "face_recognition_sface_2021dec.onnx": "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx",
 }
 
 

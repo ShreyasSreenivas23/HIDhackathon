@@ -27,14 +27,20 @@ pip install -r requirements-core.txt
 STUB_MODE=1 uvicorn app.main:app --reload --port 8000
 ```
 
-### 2. API (real models)
-Recommended: Docker (Linux), since `insightface` has no Windows wheels.
+### 2. API (real models), natively on Windows, no Docker needed
 ```bash
 cd api
-python scripts/download_models.py        # MiniFAS ONNX + YOLO weights into api/models/
-docker compose -f ../infra/docker-compose.yml up --build
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install ultralytics
+python scripts/download_models.py        # MiniFAS, YOLO, YuNet + SFace into api/models/
+FACE_BACKEND=opencv uvicorn app.main:app --port 8000
 ```
-Or natively: `pip install -r requirements.txt` (needs MSVC Build Tools on Windows for insightface).
+Faces use the OpenCV backend (YuNet detection + SFace recognition), which is built into opencv-python.
+In Docker/Linux, `insightface` (SCRFD + ArcFace) is used automatically when installed:
+`docker compose -f ../infra/docker-compose.yml up --build`.
+
+**Enroll first.** An un-enrolled face is always DENY ("Person not enrolled"). Use the kiosk's Enroll tab.
+The REQUEST_VERIFICATION challenge (blink / turn) appears only when liveness or identity is *uncertain*. A clear live, enrolled face gets ALLOW directly.
 
 ### 3. Kiosk
 ```bash

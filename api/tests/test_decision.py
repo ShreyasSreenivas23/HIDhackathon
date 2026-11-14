@@ -68,14 +68,26 @@ def _face(yaw_shift=0.0, depth=1.0):
 
 def test_planarity_real_vs_flat():
     # small natural head motion is enough to prove 3D
-    real = planarity_score([_face(y, 1.0) for y in [0, 0.05, 0.1, 0.2]])
+    # a few degrees of head rotation (e.g. the challenge head-turn) proves 3D; a perfectly still
+    # person gives None (no opinion), which is fine: other signals decide
+    real = planarity_score([_face(y, 1.0) for y in [0, 0.1, 0.2, 0.25]])
     assert real is not None and real > 0.8
     # a photo tilted/waved strongly: the plane deforms but the nose follows it -> spoof
-    flat = planarity_score([_face(y, 0.0) for y in [0, 0.2, 0.4, 0.6]])
+    flat = planarity_score([_face(y, 0.0) for y in [0, 0.6, 0.9, 1.1]])
     assert flat is not None and flat < 0.2
     # no motion / tiny motion of a flat image -> no opinion (never guess)
     assert planarity_score([_face(0, 1.0)] * 4) is None
     assert planarity_score([_face(y, 0.0) for y in [0, 0.05, 0.1]]) is None
+
+
+def test_planarity_robust_to_landmark_noise():
+    # YuNet/SCRFD landmarks jitter ~1-2 px; a REAL person standing still must never be called flat
+    rng = np.random.default_rng(0)
+    noisy = lambda k: k + rng.normal(0, 1.5, k.shape)  # noqa: E731
+    still_real = [planarity_score([noisy(_face(0, 1.0)) for _ in range(5)]) for _ in range(200)]
+    assert all(v is None or v >= 0.5 for v in still_real)
+    still_flat = [planarity_score([noisy(_face(0, 0.0)) for _ in range(5)]) for _ in range(200)]
+    assert sum(v is not None and v > 0.5 for v in still_flat) / 200 < 0.10
 
 
 def test_challenge_helpers():
