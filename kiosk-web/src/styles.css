@@ -104,3 +104,11 @@ button.link { background: none; border: 0; color: var(--muted); text-decoration:
 .pqc { font-size: 13px; padding: 8px 12px; border-radius: 8px; margin: 0 0 14px; }
 .pqc.ok { background: #102a3f; color: #8fd3ff; border: 1px solid #1f4f7a; }
 .pqc.bad { background: #3b1414; color: #ff9b9b; border: 1px solid #6b2020; }
+
+.identity { display: flex; align-items: center; gap: 14px; margin: 16px 0 4px; padding: 10px 14px; border-radius: 10px; background: #0b1530; }
+.identity .avatar { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; font-size: 24px; font-weight: 800; background: #22325f; }
+.identity .name { display: block; font-size: 26px; font-weight: 800; }
+.identity .sub { display: block; font-size: 13px; color: var(--muted); }
+.identity.yes .avatar { background: var(--allow); }
+.identity.maybe .avatar { background: var(--verify); color: #1b1300; }
+.identity.none .name { color: var(--muted); }

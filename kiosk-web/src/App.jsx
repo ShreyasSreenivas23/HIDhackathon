@@ -247,7 +247,7 @@ export default function App() {
           {tab === "enroll" ? (
             <EnrollPanel videoRef={videoRef} analysisRef={analysisRef} />
           ) : phase === "challenge" && challengeUi ? (
-            <ChallengePanel {...challengeUi} />
+            <ChallengePanel {...challengeUi} who={result?.identity?.user_id} />
           ) : phase === "otp" ? (
             <OtpPanel
               suggestedUser={result?.identity?.user_id}
@@ -255,7 +255,7 @@ export default function App() {
               onCancel={() => { goodSinceRef.current = null; setPhase("scanning"); }}
             />
           ) : phase === "result" ? (
-            <ResultPanel result={result} clientMs={clientMs} />
+            <ResultPanel result={result} clientMs={clientMs} thresholds={health?.thresholds} />
           ) : (
             <div className="idle">
               <h1>Step up to the camera</h1>

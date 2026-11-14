@@ -37,15 +37,30 @@ const BADGE = {
   REQUEST_VERIFICATION: { cls: "verify", icon: "!", text: "VERIFY" },
 };
 
-export default function ResultPanel({ result, clientMs }) {
+/** Who the system thinks this is: recognised (>= identity_hi), possible (gray zone), or not recognised. */
+export function identityView(identity, thresholds) {
+  const name = identity?.user_id, sim = identity?.similarity;
+  const lo = thresholds?.identity_lo ?? 0.28, hi = thresholds?.identity_hi ?? 0.4;
+  if (!name || sim == null) return { cls: "none", text: "Not recognised", sub: "no enrolled face matched" };
+  if (identity.matched || sim >= hi) return { cls: "yes", text: name, sub: `recognised · match ${sim.toFixed(2)}` };
+  if (sim >= lo) return { cls: "maybe", text: `${name}?`, sub: `uncertain match ${sim.toFixed(2)}` };
+  return { cls: "none", text: "Not recognised", sub: `closest enrolled: ${name} (${sim.toFixed(2)})` };
+}
+
+export default function ResultPanel({ result, clientMs, thresholds }) {
   if (!result) return null;
   const b = BADGE[result.decision];
   const signals = result.liveness?.signals || {};
+  const who = identityView(result.identity, thresholds);
   return (
     <div className="result">
       <div className={`badge ${b.cls}`}>
         <span className="icon">{b.icon}</span>
         <span>{b.text}</span>
+      </div>
+      <div className={`identity ${who.cls}`}>
+        <span className="avatar">{who.cls === "none" ? "?" : who.text.slice(0, 1).toUpperCase()}</span>
+        <span><span className="name">{who.text}</span><span className="sub">{who.sub}</span></span>
       </div>
       <p className="message">{result.message}</p>
       {result.offline?.local === false && <p className="offline-note">Decision made locally: fail-closed offline policy</p>}
@@ -55,7 +70,7 @@ export default function ResultPanel({ result, clientMs }) {
           {" · "}{result.schedule.timezone}
         </p>
       )}
-      {result.identity?.user_id && result.decision === "ALLOW" && <p className="who">Welcome, {result.identity.user_id}</p>}
+      {who.cls === "yes" && result.decision === "ALLOW" && <p className="who">Welcome, {who.text}</p>}
 
       <div className="stats">
         <div><span className="k">⏱ Decision time</span><span className="v">{(clientMs / 1000).toFixed(2)} s</span></div>
