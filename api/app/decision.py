@@ -2,7 +2,7 @@
 
 Order of rules:
  1. no face / several faces / poor quality -> REQUEST_VERIFICATION (recapture with guidance, no challenge)
- 2. hard spoof evidence: phone/screen detected, or flat face (planarity) with low liveness -> DENY
+ 2. hard spoof evidence: phone/screen detected (device or extremely low texture score), or flat face -> DENY
  3. no enrolled match / similarity < lo           -> DENY
  4. liveness >= hi and identity >= hi             -> ALLOW
  5. anything in between (incl. low TEXTURE score) -> REQUEST_VERIFICATION + active challenge
@@ -62,6 +62,10 @@ def decide(ev: Evidence, th: Thresholds) -> Outcome:
     dev = ev.signals.get("device")
     if dev is not None and dev < th.device_hard:
         return Outcome("DENY", round(1 - dev, 3), ["phone_detected"] + [r for r in ev.liveness_reasons if r != "phone_detected"], MESSAGES["DENY_SPOOF"])
+
+    tex = ev.signals.get("minifas")
+    if tex is not None and tex < th.texture_hard:
+        return Outcome("DENY", round(1 - tex, 3), ["screen_texture"], MESSAGES["DENY_SPOOF"])
 
     if ev.quality_issues:
         return Outcome("REQUEST_VERIFICATION", 0.0, ["low_quality"] + ev.quality_issues, MESSAGES["RECAPTURE"])

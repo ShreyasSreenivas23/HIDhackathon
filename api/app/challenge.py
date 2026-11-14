@@ -74,11 +74,17 @@ def server_turn_check(required: list[str], kps_list: list, yaw_needed: float) ->
     """Independent server-side check of head-turn actions from the frames (don't trust the client alone).
     blink/smile are verified client-side (blendshapes) + by the liveness score on challenge frames."""
     yaws = [yaw_proxy(k) for k in kps_list if k is not None]
-    if not yaws:
+    if len(yaws) < 2:
         return False
     yaws = np.array(yaws)
-    if "turn_left" in required and yaws.max() < yaw_needed:
+    # measure the turn RELATIVE to this person's own straight-ahead pose (their most frontal frame), not
+    # absolute 0: people/cameras have a small natural offset (+0.04 measured), and the browser's MediaPipe
+    # landmarks read turns larger than the server's YuNet ones (kiosk saw 0.25 where the server saw 0.19).
+    # (Not the median: a burst with many turned frames drags the median toward the turn, which made a
+    #  right-only turn also count as "left".)
+    base = float(yaws[np.argmin(np.abs(yaws))])
+    if "turn_left" in required and yaws.max() - base < yaw_needed:
         return False
-    if "turn_right" in required and yaws.min() > -yaw_needed:
+    if "turn_right" in required and base - yaws.min() < yaw_needed:
         return False
     return True

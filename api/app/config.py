@@ -23,9 +23,12 @@ class Thresholds:
     identity_hi: float = 0.40          # at/above -> confident match
     # signals
     device_hard: float = 0.30          # device signal below this -> hard DENY (face is inside a phone/laptop/tv)
+    texture_hard: float = 0.01         # MiniFAS below this -> hard DENY 'screen_texture'. Live data (26 real bursts,
+                                       # warm dim hall): real min 0.022; phone attacks 0.0002/0.001/0.008/0.025.
+                                       # Thin margin on small data -> re-check with eval/ before relying on it.
     planar_hard: float = 0.20          # planarity below this (clearly flat face) + low liveness -> hard DENY
     signal_flag: float = 0.40          # any signal below this is listed in `reasons`
-    challenge_yaw: float = 0.20        # server-side |yaw_proxy| needed to accept a turn action
+    challenge_yaw: float = 0.12        # server-side yaw change vs own frontal pose to accept a turn (noise ~0.03; a tilted flat photo < 0.05)
     # quality gate (server side; client has its own copy)
     min_face_px: int = 90
     min_blur: float = 25.0             # Laplacian variance on the face resized to 112px (soft webcam ~130, very blurry ~15)
@@ -65,7 +68,7 @@ class Settings:
         self.enable_device = _flag("ENABLE_DEVICE")
         self.enable_planarity = _flag("ENABLE_PLANARITY")
         self.minifas_model = self.models_dir / os.getenv("MINIFAS_FILE", "minifas_best_model.onnx")
-        self.dino_head = self.models_dir / os.getenv("DINO_HEAD_FILE", "dino_head.joblib")
+        self.dino_head = self.models_dir / os.getenv("DINO_HEAD_FILE", "dino_head.npz")
         self.yolo_model = self.models_dir / os.getenv("YOLO_FILE", "yolo11n.pt")
         self.thresholds = Thresholds.load(self.thresholds_file)
 

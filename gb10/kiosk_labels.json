@@ -1,0 +1,7 @@
+{
+  "_note": "Debug-dump bursts (data/debug/<timestamp>_...) to label. Everything not listed as spoof or exclude is treated as LIVE.",
+  "spoof_bursts": ["1794638369366", "1794638379796", "1794638544237", "1794638554809"],
+  "exclude_bursts": ["1794636468439", "1794637063501", "1794637079399", "1794637090953", "1794637102421",
+                     "1794637651335", "1794638261572"],
+  "exclude_rule": "also excluded automatically: bursts that look like the poster test image (face ~195 px and MiniFAS ~1.0)"
+}

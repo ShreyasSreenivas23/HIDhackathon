@@ -15,7 +15,7 @@ export const QUALITY = {
   maxAbsYaw: 0.3,
   minBlur: 40,
 };
-export const ACTION_THRESH = { yaw: 0.25, blink: 0.5, smile: 0.5 };
+export const ACTION_THRESH = { yaw: 0.3, blink: 0.5, smile: 0.5 }; // yaw a bit above the server check so both agree
 
 let landmarker = null;
 
