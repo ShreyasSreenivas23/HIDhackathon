@@ -9,10 +9,16 @@ from app.config import settings
 
 class AwsClients:
     def __init__(self) -> None:
-        self.rekognition = boto3.client("rekognition", region_name=settings.aws_region)
-        self.bedrock_runtime = boto3.client("bedrock-runtime", region_name=settings.aws_region)
-        self.s3 = boto3.client("s3", region_name=settings.aws_region)
-        self.dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+        session = boto3.Session(
+            aws_access_key_id=settings.aws_access_key_id,
+            aws_secret_access_key=settings.aws_secret_access_key,
+            aws_session_token=settings.aws_session_token,
+            region_name=settings.aws_region,
+        )
+        self.rekognition = session.client("rekognition")
+        self.bedrock_runtime = session.client("bedrock-runtime")
+        self.s3 = session.client("s3")
+        self.dynamodb = session.resource("dynamodb")
 
 
 clients = AwsClients()
@@ -105,3 +111,16 @@ def bedrock_step_up_instruction(prior_reasons: list[str]) -> str:
     if not text:
         return "Turn slightly left and smile for one second."
     return text
+
+def save_enrolled_face(employee_id: str, image_bytes: bytes) -> None:
+    # Validate exactly one clear face exists before enrolling
+    resp = clients.rekognition.detect_faces(Image={"Bytes": image_bytes})
+    if not resp.get("FaceDetails"):
+        raise ValueError("No clear face detected in enrollment capture.")
+
+    clients.s3.put_object(
+        Bucket=settings.enrolled_faces_bucket,
+        Key=f"{employee_id}.jpg",
+        Body=image_bytes,
+        ContentType="image/jpeg",
+    )

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HID Zero-Trust Liveness Kiosk | Goal Diggers</title>
+  <style>
+    :root { --bg: #0b1120; --card: #131c31; --text: #f8fafc; }
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+    body {
+      margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      transition: background-color 0.08s ease; padding: 20px;
+    }
+    .kiosk {
+      background: var(--card); border: 1px solid #1e293b; border-radius: 16px;
+      padding: 24px; max-width: 780px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .badge-hid { background: #0284c7; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 13px; }
+    .grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; }
+    video { width: 100%; border-radius: 12px; background: #000; transform: scaleX(-1); border: 2px solid #334155; }
+    .controls { display: flex; flex-direction: column; gap: 12px; }
+    input, button {
+      padding: 12px; border-radius: 8px; border: 1px solid #334155; font-size: 14px;
+    }
+    input { background: #0f172a; color: white; }
+    .btn-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 8px; }
+    button { background: #0284c7; color: white; font-weight: 600; cursor: pointer; border: none; }
+    button.secondary { background: #1e293b; border: 1px solid #334155; }
+    button.secondary:hover { background: #334155; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status-box {
+      padding: 16px; border-radius: 10px; background: #0f172a; border: 1px solid #1e293b;
+      min-height: 170px; display: flex; flex-direction: column; justify-content: center;
+    }
+    .ALLOW { border-color: #22c55e; background: rgba(34, 197, 94, 0.12); }
+    .REQUEST_VERIFICATION { border-color: #eab308; background: rgba(234, 179, 8, 0.12); }
+    .DENY { border-color: #ef4444; background: rgba(239, 68, 68, 0.12); }
+    .decision-title { font-size: 22px; font-weight: 800; margin: 0 0 6px; }
+    .metrics-bar {
+      margin-top: 16px; padding-top: 12px; border-top: 1px solid #1e293b;
+      display: flex; justify-content: space-between; font-size: 13px; color: #94a3b8;
+    }
+    canvas { display: none; }
+  </style>
+</head>
+<body>
+  <div class="kiosk">
+    <div class="header">
+      <div><span class="badge-hid">HID</span> <strong>Zero-Trust Liveness Kiosk</strong></div>
+      <span style="font-size: 13px; color: #94a3b8;">Team Goal Diggers</span>
+    </div>
+
+    <div class="grid">
+      <div>
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas" width="640" height="480"></canvas>
+      </div>
+
+      <div class="controls">
+        <label style="font-size: 13px; color: #94a3b8;">Employee ID (S3 Key: &lt;id&gt;.jpg)</label>
+        <input id="empId" value="tm_01" placeholder="e.g., tm_01 or judge_01" />
+        <div class="btn-row">
+          <button id="scanBtn" onclick="runScan()">Verify Liveness</button>
+          <button id="enrollBtn" class="secondary" onclick="enrollFace()">+ Enroll Face</button>
+        </div>
+
+        <div id="statusBox" class="status-box">
+          <div style="color: #94a3b8;">Ready. Enroll a new ID or click Verify Liveness.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="metrics-bar" id="metricsBar">
+      <span>Total Scans: 0</span>
+      <span>Allow: 0 | Verify: 0 | Deny: 0</span>
+      <span>P95 Latency: 0 ms</span>
+    </div>
+  </div>
+
+  <script>
+    const API = "http://localhost:8000";
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
+      .then(stream => { video.srcObject = stream; })
+      .catch(err => alert("Camera access denied: " + err));
+
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    function snapFrame() {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.90).split(",")[1];
+    }
+
+    function setButtonsDisabled(state) {
+      document.getElementById("scanBtn").disabled = state;
+      document.getElementById("enrollBtn").disabled = state;
+    }
+
+    async function refreshMetrics() {
+      try {
+        const res = await fetch(`${API}/metrics`);
+        const m = await res.json();
+        document.getElementById("metricsBar").innerHTML = `
+          <span>Total Scans: <strong>${m.total_requests}</strong></span>
+          <span>Allow: <strong>${m.allow_count}</strong> | Verify: <strong>${m.request_verification_count}</strong> | Deny: <strong>${m.deny_count}</strong></span>
+          <span>P95 Latency: <strong>${m.p95_latency_ms} ms</strong></span>
+        `;
+      } catch (e) {}
+    }
+
+    async function enrollFace() {
+      const box = document.getElementById("statusBox");
+      const employeeId = document.getElementById("empId").value.trim();
+      if (!employeeId) {
+        alert("Enter an Employee ID first (e.g., judge_01)");
+        return;
+      }
+
+      setButtonsDisabled(true);
+      box.className = "status-box";
+      box.innerHTML = `<div>Capturing & uploading <strong>${employeeId}.jpg</strong> to S3...</div>`;
+
+      try {
+        const image_b64 = snapFrame();
+        const res = await fetch(`${API}/enroll`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ employee_id: employeeId, image_b64 })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Enrollment failed");
+
+        box.className = "status-box ALLOW";
+        box.innerHTML = `
+          <div class="decision-title">ENROLLED</div>
+          <div style="font-size:14px;">Saved <strong>${data.s3_key}</strong> to S3 bucket.</div>
+          <div style="font-size:12px; color:#cbd5e1; margin-top:6px;">Click "Verify Liveness" to test authentication now.</div>
+        `;
+      } catch (err) {
+        box.className = "status-box DENY";
+        box.innerHTML = `<div class="decision-title">ENROLL FAILED</div><div style="font-size:13px;">${err.message}</div>`;
+      } finally {
+        setButtonsDisabled(false);
+      }
+    }
+
+    async function runScan() {
+      const box = document.getElementById("statusBox");
+      const employeeId = document.getElementById("empId").value.trim();
+      setButtonsDisabled(true);
+      box.className = "status-box";
+      box.innerHTML = "<div>1/3 Requesting cryptographic challenge...</div>";
+
+      try {
+        const startRes = await fetch(`${API}/start-session`, {
+          method: "POST",
+          signal: AbortSignal.timeout(4000)
+        });
+        if (!startRes.ok) throw new Error(`Start session failed (${startRes.status})`);
+        const session = await startRes.json();
+
+        box.innerHTML = `<div>2/3 Hold still: <strong>${session.prompt_hint}</strong></div>`;
+        await sleep(150);
+        const baseline_b64 = snapFrame();
+
+        document.body.style.backgroundColor = session.flash_colors[0];
+        await sleep(160);
+        const flash1_b64 = snapFrame();
+
+        document.body.style.backgroundColor = session.flash_colors[1];
+        await sleep(160);
+        const flash2_b64 = snapFrame();
+
+        document.body.style.backgroundColor = "#0b1120";
+        box.innerHTML = "<div>3/3 Running Fast-Path CV + Rekognition...</div>";
+
+        const t0 = performance.now();
+        const verifyRes = await fetch(`${API}/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: session.session_id,
+            challenge_token: session.challenge_token,
+            employee_id: employeeId,
+            baseline_b64,
+            flash1_b64,
+            flash2_b64
+          })
+        });
+
+        if (!verifyRes.ok) {
+          const err = await verifyRes.json();
+          throw new Error(err.detail || "Verification failed");
+        }
+
+        const result = await verifyRes.json();
+        const e2eMs = Math.round(performance.now() - t0);
+
+        let stepUpHtml = "";
+        if (result.decision === "REQUEST_VERIFICATION") {
+          const stepRes = await fetch(`${API}/step-up`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              session_id: session.session_id,
+              challenge_token: session.challenge_token,
+              prior_reasons: result.reasons
+            })
+          });
+          const stepData = await stepRes.json();
+          stepUpHtml = `<div style="margin-top:8px; padding:8px; background:#1e293b; border-radius:6px; font-size:13px;">
+            <strong>Bedrock Step-Up Challenge:</strong><br/>${stepData.instruction}
+          </div>`;
+        }
+
+        box.className = `status-box ${result.decision}`;
+        box.innerHTML = `
+          <div class="decision-title">${result.decision}</div>
+          <div style="font-size:14px;">Backend Time: <strong>${result.latency_ms} ms</strong> (E2E: ${e2eMs} ms)</div>
+          <div style="font-size:13px; margin-top:4px;">
+            Confidence: <strong>${result.confidence}</strong> | ID: ${result.identity_score} | Live: ${result.liveness_score} | Spoof: ${result.spoof_score}
+          </div>
+          <div style="font-size:12px; color:#cbd5e1; margin-top:6px;">${result.reasons.join(" • ")}</div>
+          ${stepUpHtml}
+        `;
+        await refreshMetrics();
+      } catch (err) {
+        document.body.style.backgroundColor = "#0b1120";
+        box.className = "status-box DENY";
+        box.innerHTML = `<div class="decision-title">ERROR</div><div style="font-size:13px;">${err.message}</div>`;
+      } finally {
+        setButtonsDisabled(false);
+      }
+    }
+
+    refreshMetrics();
+  </script>
+</body>
+</html>

@@ -66,6 +66,34 @@ def start_session() -> StartSessionResponse:
         expires_in_seconds=settings.challenge_ttl_seconds,
     )
 
+from pydantic import BaseModel
+from app.aws_clients import (
+    bedrock_step_up_instruction,
+    compare_faces,
+    detect_face_quality,
+    fetch_enrolled_face,
+    log_audit_event,
+    save_enrolled_face,
+)
+
+class EnrollRequest(BaseModel):
+    employee_id: str
+    image_b64: str
+
+@app.post("/enroll")
+def enroll(payload: EnrollRequest) -> dict:
+    emp_id = payload.employee_id.strip()
+    if not emp_id:
+        raise HTTPException(status_code=400, detail="Employee ID is required.")
+    try:
+        image_bytes = _decode_bytes(payload.image_b64)
+        save_enrolled_face(emp_id, image_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"S3 enrollment failed: {exc}") from exc
+
+    return {"status": "enrolled", "employee_id": emp_id, "s3_key": f"{emp_id}.jpg"}
 
 @app.post("/verify", response_model=VerifyResponse)
 def verify(payload: VerifyRequest) -> VerifyResponse:
