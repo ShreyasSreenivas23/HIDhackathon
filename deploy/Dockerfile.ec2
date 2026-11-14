@@ -1,0 +1,31 @@
+# Built ON the EC2 instance from a slim bundle (code + kiosk + trained head + seed DB).
+# Public models are downloaded during the build, so the upload stays small.
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 git \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /srv
+
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+COPY api/requirements-core.txt /srv/api/requirements-core.txt
+RUN pip install --no-cache-dir -r /srv/api/requirements-core.txt ultralytics
+
+ENV TORCH_HOME=/srv/torch
+RUN python -c "import torch; torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')"
+
+COPY api /srv/api
+RUN cd /srv/api && python scripts/download_models.py
+COPY kiosk-web/dist /srv/kiosk-web/dist
+
+ENV FACE_BACKEND=opencv \
+    MODELS_DIR=/srv/api/models \
+    SQLITE_PATH=/srv/data/enrollments.db \
+    KIOSK_DIST=/srv/kiosk-web/dist \
+    PQC_KEY_DIR=/srv/data/keys \
+    YOLO_CONFIG_DIR=/tmp/ultralytics \
+    PYTHONUNBUFFERED=1 \
+    PORT=8080
+EXPOSE 8080
+WORKDIR /srv/api
+# seed the persistent volume with the bundled enrollments on first start
+CMD ["sh", "-c", "mkdir -p /srv/data && [ -f /srv/data/enrollments.db ] || cp /srv/api/enrollments.db /srv/data/ 2>/dev/null; uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 1"]

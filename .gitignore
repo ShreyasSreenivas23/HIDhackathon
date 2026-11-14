@@ -39,3 +39,4 @@ gb10/config.env
 backend/.env
 api/keys/
 data/deploy_ctx/
+data/aws_deploy_state.json
