@@ -27,6 +27,8 @@ pip install -r requirements-core.txt
 STUB_MODE=1 uvicorn app.main:app --reload --port 8000
 ```
 
+For a clean Python 3.10 PowerShell setup, see [SETUP_WINDOWS.md](SETUP_WINDOWS.md).
+
 ### 2. API (real models), natively on Windows, no Docker needed
 ```bash
 cd api
@@ -41,6 +43,18 @@ In Docker/Linux, `insightface` (SCRFD + ArcFace) is used automatically when inst
 
 **Enroll first.** An un-enrolled face is always DENY ("Person not enrolled"). Use the kiosk's Enroll tab.
 The REQUEST_VERIFICATION challenge (blink / turn) appears only when liveness or identity is *uncertain*. A clear live, enrolled face gets ALLOW directly.
+
+### Campus access and offline safety
+
+Campus permissions are configured through the FastAPI schedule endpoints
+documented in [CONTRACT.md](CONTRACT.md). They use timezone-aware weekly
+windows and date exceptions; biometric success alone never grants access
+outside an enabled schedule.
+
+The kiosk shows ONLINE/OFFLINE MODE and queues only non-image decision metadata
+for synchronization. If the central API is unavailable and no separately
+configured local biometric service (`VITE_OFFLINE_API_BASE`) is available, the
+browser fails closed with DENY rather than granting access.
 
 ### 3. Kiosk
 ```bash

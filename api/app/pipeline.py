@@ -173,7 +173,7 @@ class Pipeline:
         t.mark("identity")
         return Analysis(ev, t.done(), frames, faces, best)
 
-    def enroll(self, user_id: str, frames_b64: list[str]) -> tuple[bool, int, float, str]:
+    def enroll(self, user_id: str, frames_b64: list[str], *, authority="student", active=True, expires_at=None) -> tuple[bool, int, float, str]:
         frames = [decode_b64_image(f) for f in frames_b64]
         embs, quals, problems = [], [], set()
         for img in frames:
@@ -195,5 +195,5 @@ class Pipeline:
             return False, 0, 0.0, "No usable frame (" + ", ".join(sorted(problems)) + ")"
         template = np.mean(embs, axis=0)
         template /= np.linalg.norm(template) + 1e-9
-        self.store.upsert(user_id, template.astype(np.float32))
+        self.store.upsert(user_id, template.astype(np.float32), authority=authority, active=active, expires_at=expires_at)
         return True, len(embs), float(np.mean(quals)), ""

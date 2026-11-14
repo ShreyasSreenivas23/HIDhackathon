@@ -1,12 +1,14 @@
-# Enough to run the API in STUB_MODE and the decision/unit tests (works on Windows natively)
-fastapi>=0.110
-uvicorn[standard]>=0.29
-pydantic>=2.6
+# Shared API and inference dependencies. These ranges have wheels for Python 3.10
+# on Windows and avoid silently pulling a future major version.
+fastapi>=0.110,<1
+uvicorn[standard]>=0.29,<1
+pydantic>=2.6,<3
 numpy>=1.26,<2.3
-opencv-python-headless>=4.9
-onnxruntime>=1.17
-scikit-learn>=1.4
-joblib>=1.3
-boto3>=1.34
-pytest>=8.0
-httpx>=0.27
+opencv-python-headless>=4.9,<5
+onnxruntime>=1.17,<2
+scikit-learn>=1.4,<2
+joblib>=1.3,<2
+boto3>=1.34,<2
+pytest>=8.0,<10
+httpx>=0.27,<1
+tzdata>=2024.1

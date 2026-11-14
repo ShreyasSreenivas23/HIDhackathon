@@ -7,10 +7,18 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
   const [user, setUser] = useState("");
   const [status, setStatus] = useState("");
   const [users, setUsers] = useState([]);
+  const [authority, setAuthority] = useState("student");
+  const [active, setActive] = useState(true);
+  const [duration, setDuration] = useState("");
   const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(Date.now());
 
-  const refresh = () => api.users().then((r) => setUsers(r.users)).catch(() => {});
+  const refresh = () => api.userDetails().then(setUsers).catch(() => {});
   useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const enroll = async () => {
     setBusy(true);
@@ -27,7 +35,11 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
       return;
     }
     try {
-      const r = await api.enroll(user.trim(), frames);
+      const r = await api.enroll(user.trim(), frames, {
+        authority,
+        active,
+        ...(duration ? { expires_in_seconds: Number(duration) } : {}),
+      });
       setStatus(r.ok ? `✓ Enrolled ${r.user_id} (${r.frames_used} frames)` : `✕ ${r.message}`);
       refresh();
     } catch (e) {
@@ -36,14 +48,69 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
     setBusy(false);
   };
 
+  const removeUser = async (userId) => {
+    if (!window.confirm(`Remove ${userId} from enrollment?`)) return;
+    try {
+      await api.deleteUser(userId);
+      setStatus(`Removed ${userId}`);
+      refresh();
+    } catch (e) {
+      setStatus(String(e));
+    }
+  };
+
+  const toggleUser = async (profile) => {
+    try {
+      await api.updateUser(profile.user_id, { active: !profile.active });
+      setStatus(`${profile.user_id} is now ${profile.active ? "inactive" : "active"}`);
+      refresh();
+    } catch (e) {
+      setStatus(String(e));
+    }
+  };
+
+  const clearExpiry = async (profile) => {
+    try {
+      await api.updateUser(profile.user_id, { expires_in_seconds: 0 });
+      setStatus(`Expiry cleared for ${profile.user_id}`);
+      refresh();
+    } catch (e) {
+      setStatus(String(e));
+    }
+  };
+
   return (
     <div className="enroll">
       <h2>Enroll a person</h2>
       <input placeholder="Employee ID / name" value={user} onChange={(e) => setUser(e.target.value)} />
+      <label>Authority
+        <select value={authority} onChange={(e) => setAuthority(e.target.value)}>
+          <option value="student">Student</option>
+          <option value="teacher">Teacher</option>
+          <option value="admin">Admin</option>
+        </select>
+      </label>
+      <label className="check"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active immediately</label>
+      <label>Enrollment lifetime
+        <select value={duration} onChange={(e) => setDuration(e.target.value)}>
+          <option value="">No expiry</option>
+          <option value="60">1 minute</option>
+          <option value="3600">1 hour</option>
+          <option value="86400">1 day</option>
+        </select>
+      </label>
       <button disabled={!user.trim() || busy} onClick={enroll}>{busy ? "Capturing…" : "Capture & enroll"}</button>
       <p className="status">{status}</p>
       <h3>Enrolled ({users.length})</h3>
-      <ul className="users">{users.map((u) => <li key={u}>{u}</li>)}</ul>
+      <ul className="users">{users.map((u) => {
+        const expired = u.expires_at && new Date(u.expires_at).getTime() <= now;
+        return <li key={u.user_id}>
+        <span><strong>{u.user_id}</strong> · {u.authority} · {u.active ? (expired ? "expired" : "active") : "inactive"}{u.expires_at ? ` · expires ${new Date(u.expires_at).toLocaleString()}` : ""}</span>
+        <button onClick={() => toggleUser(u)}>{u.active ? "Deactivate" : "Activate"}</button>
+        {u.expires_at && <button onClick={() => clearExpiry(u)}>Clear expiry</button>}
+        <button className="remove-user" onClick={() => removeUser(u.user_id)}>Remove</button>
+      </li>;
+      })}</ul>
     </div>
   );
 }
