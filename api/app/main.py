@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .access import AccessRepository, schedule_from_payload, schedule_payload
 from .aws_services import AwsServices, Metrics
+from .pqc import PQSigner, decision_payload
 from .challenge import ChallengeManager, events_in_order, server_turn_check
 from .config import settings
 from .decision import Evidence, Outcome, decide
@@ -42,6 +43,7 @@ stub_profiles: dict[str, dict] = {}
 challenges = ChallengeManager()
 aws = AwsServices(settings.aws_region)
 metrics = Metrics()
+signer = PQSigner(Path(os.getenv("PQC_KEY_DIR", str(Path(__file__).resolve().parent.parent / "keys"))))
 access = AccessRepository(settings.sqlite_path)
 th = settings.thresholds
 
@@ -120,6 +122,9 @@ def _response(
         schedule=schedule,
         offline=offline,
     )
+    t_sig = time.perf_counter()
+    resp.attestation = signer.sign(decision_payload(resp))      # post-quantum signed decision
+    resp.timings_ms["pqc_sign"] = round((time.perf_counter() - t_sig) * 1000, 1)
     metrics.record(resp)
     aws.audit("decision", resp)
     # structured log line -> CloudWatch Logs in cloud mode (metric filters on decision / total ms)
@@ -182,10 +187,29 @@ def health():
         "enrolled": len(_user_profiles()),
         "thresholds": th.to_dict(),
         "connectivity": "online",
+        "pqc": {k: v for k, v in signer.public_info().items() if k != "public_key_b64"},
         "aws": aws.enabled,
         "offline_events_pending": pending,
         "schedules": [schedule_payload(item) for item in access.all_schedules()],
     }
+
+
+@app.get("/pqc/public-key")
+def pqc_public_key():
+    """ML-DSA-65 verification key for door controllers / kiosks."""
+    return signer.public_info()
+
+
+@app.post("/pqc/verify")
+def pqc_verify(body: dict):
+    """Server-side check of an attestation {payload, signature_b64} (for demos and audits)."""
+    ok = signer.verify(body.get("payload", ""), body.get("signature_b64", ""))
+    exp = None
+    try:
+        exp = json.loads(body.get("payload", "{}")).get("expires_at")
+    except Exception:
+        pass
+    return {"valid_signature": ok, "expired": exp is not None and time.time() > exp, "alg": "ML-DSA-65"}
 
 
 @app.get("/metrics")

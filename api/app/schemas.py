@@ -97,6 +97,8 @@ class VerifyResponse(BaseModel):
     timings_ms: dict[str, float] = {}
     schedule: Optional["ScheduleStatus"] = None
     offline: Optional["OfflineStatus"] = None
+    attestation: Optional[dict] = None   # ML-DSA-65 signed decision (see app/pqc.py)
+
 
 
 class AccessWindowModel(BaseModel):

@@ -37,6 +37,14 @@ async function call(path, body, method = "POST", base = BASE) {
   }
 }
 
+import { enforce } from "./pqc";
+
+// Every decision passes the post-quantum door-controller check (ML-DSA-65) before the UI sees it.
+const pqcKey = () => call("/pqc/public-key", null, "GET");
+let stubMode = false;
+export function setStubMode(v) { stubMode = !!v; }
+const signed = (p) => p.then((r) => enforce(r, pqcKey, { stub: stubMode }));
+
 export const API_BASE = BASE;
 export const OFFLINE_API_BASE = OFFLINE_BASE;
 export const api = {
@@ -48,11 +56,12 @@ export const api = {
   schedules: () => call("/access/schedules", null, "GET"),
   schedule: (user_id) => call(`/access/schedules/${encodeURIComponent(user_id)}`, null, "GET"),
   enroll: (user_id, frames, options = {}) => call("/enroll", { user_id, frames, ...options }),
-  verify: (frames, client_quality, claimed_user_id = null) => call("/verify", { frames, client_quality, claimed_user_id }),
-  challenge: (nonce, frames, client_events) => call("/challenge", { nonce, frames, client_events }),
+  verify: (frames, client_quality, claimed_user_id = null) => signed(call("/verify", { frames, client_quality, claimed_user_id })),
+  challenge: (nonce, frames, client_events) => signed(call("/challenge", { nonce, frames, client_events })),
   otpRequest: (user_id) => call("/otp/request", { user_id }),
-  otpVerify: (user_id, code) => call("/otp/verify", { user_id, code }),
-  offlineVerify: (payload) => call("/offline/verify", payload, "POST", OFFLINE_BASE),
+  otpVerify: (user_id, code) => signed(call("/otp/verify", { user_id, code })),
+  offlineVerify: (payload) => signed(call("/offline/verify", payload, "POST", OFFLINE_BASE)),
+  pqcPublicKey: pqcKey,
   offlineStatus: () => call("/offline/status", null, "GET", OFFLINE_BASE),
   offlineSync: (events) => call("/offline/sync", { events }, "POST", OFFLINE_BASE),
 };

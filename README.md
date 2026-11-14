@@ -217,3 +217,10 @@ Falls back to deterministic challenge text if Bedrock times out/fails.
 - Add `infra/` IaC for API Gateway + Lambda + IAM + DynamoDB + S3.
 - Add `frontend/` kiosk client with screen flash and burst capture.
 
+
+## Post-quantum security (NIST FIPS 203 / 204)
+- **Every access decision is signed with ML-DSA-65** (FIPS 204) by the API (`api/app/pqc.py`). The signed payload holds the decision, user, reasons, scores, `issued_at`, a 30 s `expires_at`, a random `decision_id` and the `key_id`. Signing takes about 45 ms.
+- **The kiosk acts as the door controller** (`kiosk-web/src/lib/pqc.js`, `@noble/post-quantum`). It verifies every decision before acting: an ALLOW is honoured only with a valid, unexpired, never-seen-before signature from the pinned key. If the signature is forged or tampered with, stripped, replayed or expired, the result is DENY `signature_invalid`. The kiosk shows "🔐 Post-quantum signed · ML-DSA-65 verified".
+- `GET /pqc/public-key` returns the verification key. `POST /pqc/verify` checks an attestation server-side. Keys are generated on first start in `api/keys/` (gitignored).
+- **ML-KEM-768** (FIPS 203) helpers are in `pqc.py` for post-quantum key encapsulation. On the wire, deploy behind HTTPS: current Chrome negotiates hybrid post-quantum TLS (X25519MLKEM768) automatically.
+- Test: `cd kiosk-web && node scripts/pqc_e2e.mjs` (real ALLOW verified; replay, forgery and stripped signature all rejected).

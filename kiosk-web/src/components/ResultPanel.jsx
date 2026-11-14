@@ -1,5 +1,7 @@
 const REASON_TEXT = {
   phone_detected: "Face shown on a phone / screen",
+  signature_invalid: "Decision signature invalid — door stays closed",
+  texture_disagreement: "Texture checks disagree — quick check needed",
   screen_texture: "Phone / screen detected (screen texture)",
   texture_spoof: "Image texture looks unusual — quick check needed",
   planar_motion: "Face looks flat (photo or screen)",
@@ -63,6 +65,14 @@ export default function ResultPanel({ result, clientMs }) {
           <div><span className="k">Match score</span><span className="v">{result.identity.similarity.toFixed(2)}</span></div>
         )}
       </div>
+
+      {result.pqc && (
+        <div className={`pqc ${result.pqc.ok ? "ok" : "bad"}`}>
+          {result.pqc.ok
+            ? <>🔐 Post-quantum signed · {result.pqc.alg} verified in {result.pqc.ms} ms · key {result.pqc.key_id?.slice(0, 8)}</>
+            : <>⚠ Signature check: {result.pqc.reason}</>}
+        </div>
+      )}
 
       {result.reasons?.length > 0 && (
         <ul className="reasons">

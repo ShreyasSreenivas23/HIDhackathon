@@ -100,3 +100,7 @@ button.link { background: none; border: 0; color: var(--muted); text-decoration:
 .enroll label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
 .enroll select { font: inherit; padding: 8px; border-radius: 6px; background: #0b1530; color: var(--text); border: 1px solid var(--line); }
 .enroll .check { flex-direction: row; align-items: center; }
+
+.pqc { font-size: 13px; padding: 8px 12px; border-radius: 8px; margin: 0 0 14px; }
+.pqc.ok { background: #102a3f; color: #8fd3ff; border: 1px solid #1f4f7a; }
+.pqc.bad { background: #3b1414; color: #ff9b9b; border: 1px solid #6b2020; }
