@@ -96,6 +96,12 @@ class Pipeline:
             # a second face at least half the size of the main one = another person in frame
             if len(faces) > 1 and faces[1].size > 0.5 * faces[0].size:
                 multiple += 1
+        # Track the person at the kiosk: if the main face is missed in a frame (e.g. mid head-turn), the
+        # "largest" face there may be someone in the background. Drop faces < half the typical main size.
+        sizes = [f.size for f in main if f is not None]
+        if sizes:
+            typical = float(np.median(sizes))
+            main = [f if f is not None and f.size >= 0.5 * typical else None for f in main]
         return main, multiple > len(frames) // 2
 
     def _best_frame(self, frames, faces) -> int | None:
@@ -104,7 +110,8 @@ class Pipeline:
             if face is None:
                 continue
             q = face_quality(f, face.bbox)
-            score = face.det_score * min(q["blur"], 300) * (1 - abs(yaw_proxy(face.kps)))
+            # prefer confident, sharp, frontal AND large faces (identity is computed on this frame)
+            score = face.det_score * min(q["blur"], 300) * max(0.0, 1 - abs(yaw_proxy(face.kps))) * face.size
             if score > best_score:
                 best, best_score = i, score
         return best

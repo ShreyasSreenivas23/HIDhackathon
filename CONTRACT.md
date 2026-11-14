@@ -70,8 +70,8 @@ Response: same shape as `/verify`. `challenge` is always `null` here — on fail
 ### Action definitions (client and server must agree)
 Computed on **raw (unmirrored) camera frames**:
 - `yaw_proxy = (nose_x - eye_mid_x) / eye_distance`  (≈0 when frontal)
-- `turn_left`  = user turns head to **their** left  → nose moves to **image right** → `yaw_proxy > +0.25`
-- `turn_right` = user turns head to **their** right → `yaw_proxy < -0.25`
+- `turn_left`  = user turns head to **their** left  → nose moves to **image right** → kiosk: `yaw_proxy > +0.30`; server: max(yaw) − yaw of most frontal frame ≥ 0.12
+- `turn_right` = user turns head to **their** right → kiosk: `yaw_proxy < −0.30`; server: yaw of most frontal frame − min(yaw) ≥ 0.12
 - `blink` = MediaPipe `eyeBlinkLeft` and `eyeBlinkRight` both > 0.5
 - `smile` = MediaPipe `mouthSmileLeft` and `mouthSmileRight` both > 0.5
 

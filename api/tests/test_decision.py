@@ -104,9 +104,21 @@ def test_challenge_helpers():
 
     left, right = _face(-0.5), _face(0.5)
     assert yaw_proxy(left) > 0.2 and yaw_proxy(right) < -0.2
-    assert server_turn_check(["turn_left"], [_face(0), left], 0.2)
-    assert not server_turn_check(["turn_left"], [_face(0), right], 0.2)
-    assert server_turn_check(["turn_right", "blink"], [_face(0), right], 0.2)
+    front = [_face(0)] * 4                       # challenge bursts are mostly frontal
+    assert server_turn_check(["turn_left"], front + [left], 0.12)
+    assert not server_turn_check(["turn_left"], front + [right], 0.12)
+    assert server_turn_check(["turn_right", "blink"], front + [right], 0.12)
+    # a person whose straight-ahead pose is slightly off-centre still has to really turn
+    offset = [_face(-0.08)] * 4
+    assert not server_turn_check(["turn_left"], offset + [_face(-0.2)], 0.12)
+    assert server_turn_check(["turn_left"], offset + [_face(-0.45)], 0.12)
+
+
+def test_flat_photo_cannot_fake_head_turn():
+    # tilting/rotating a flat photo 50+ degrees barely changes the yaw RATIO (nose stays on the plane)
+    flat = [_face(0, depth=0.0)] * 4 + [_face(-0.9, depth=0.0), _face(0.9, depth=0.0)]
+    assert not server_turn_check(["turn_left"], flat, 0.12)
+    assert not server_turn_check(["turn_right"], flat, 0.12)
 
 
 def test_every_challenge_has_a_head_turn():
@@ -116,3 +128,10 @@ def test_every_challenge_has_a_head_turn():
     for _ in range(50):
         acts = cm.create(None, False).actions
         assert len(acts) == 2 and sum(a.startswith("turn_") for a in acts) == 1
+
+
+def test_one_direction_turn_does_not_count_for_the_other():
+    # many turned-right frames + return to centre must not register as a LEFT turn (median-baseline bug)
+    burst = [_face(0)] * 2 + [_face(0.5)] * 6 + [_face(0.3)] * 2
+    assert server_turn_check(["turn_right"], burst, 0.12)
+    assert not server_turn_check(["turn_left"], burst, 0.12)

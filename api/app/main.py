@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .challenge import ChallengeManager, events_in_order, server_turn_check
 from .config import settings
 from .decision import Evidence, Outcome, decide
+from .imaging import yaw_proxy
 from .schemas import (
     Challenge, ChallengeRequest, EnrollRequest, EnrollResponse, Identity, Liveness, OtpRequest, OtpVerify,
     Quality, VerifyRequest, VerifyResponse,
@@ -65,7 +66,7 @@ def _response(outcome: Outcome, ev: Evidence, timings: dict, challenge: Challeng
     return resp
 
 
-def _debug_dump(kind: str, analysis, resp: VerifyResponse) -> None:
+def _debug_dump(kind: str, analysis, resp: VerifyResponse, extra: dict | None = None) -> None:
     """DEBUG_DUMP_DIR=<dir>: save each request's frames + response locally (for tuning thresholds). Dev only."""
     d = os.getenv("DEBUG_DUMP_DIR")
     if not d or analysis is None or not analysis.frames:
@@ -79,13 +80,15 @@ def _debug_dump(kind: str, analysis, resp: VerifyResponse) -> None:
         for i, f in enumerate(analysis.frames):
             (out / f"frame_{i}.jpg").write_bytes(encode_jpeg(f, 92))
         (out / "response.json").write_text(resp.model_dump_json(indent=2))
+        if extra:
+            (out / "challenge.json").write_text(json.dumps(extra, indent=2))
 
     threading.Thread(target=_save, daemon=True).start()
 
 
-def _audit(kind: str, analysis, resp: VerifyResponse) -> None:
+def _audit(kind: str, analysis, resp: VerifyResponse, extra: dict | None = None) -> None:
     """Optional: store best frame + decision in S3 (background thread, never blocks the response)."""
-    _debug_dump(kind, analysis, resp)
+    _debug_dump(kind, analysis, resp, extra)
     if not settings.audit_bucket or analysis is None or analysis.best_idx is None:
         return
 
@@ -200,7 +203,8 @@ def challenge(req: ChallengeRequest):
         reasons += [] if ok_id else ["identity_uncertain"]
         outcome = Outcome("DENY", 0.8, reasons, "Challenge failed — use OTP instead")
     resp = _response(outcome, ev, a.timings)
-    _audit("challenge", a, resp)
+    _audit("challenge", a, resp, {"actions": p.actions, "client_events": events,
+                                  "yaws": [None if k is None else round(yaw_proxy(k), 3) for k in kps]})
     return resp
 
 

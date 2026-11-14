@@ -25,7 +25,7 @@ class Thresholds:
     device_hard: float = 0.30          # device signal below this -> hard DENY (face is inside a phone/laptop/tv)
     planar_hard: float = 0.20          # planarity below this (clearly flat face) + low liveness -> hard DENY
     signal_flag: float = 0.40          # any signal below this is listed in `reasons`
-    challenge_yaw: float = 0.20        # server-side |yaw_proxy| needed to accept a turn action
+    challenge_yaw: float = 0.12        # server-side yaw change vs own frontal pose to accept a turn (noise ~0.03; a tilted flat photo < 0.05)
     # quality gate (server side; client has its own copy)
     min_face_px: int = 90
     min_blur: float = 25.0             # Laplacian variance on the face resized to 112px (soft webcam ~130, very blurry ~15)
