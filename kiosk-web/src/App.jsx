@@ -12,7 +12,7 @@ import { actionDone, analyzeFrame, initFaceTracker, QUALITY, qualityIssues } fro
 const DEBUG = new URLSearchParams(location.search).has("debug");
 
 const STABLE_MS = 600;        // quality must be OK this long before auto-capture
-const RESULT_HOLD_MS = 4000;  // how long a decision stays on screen
+const RESULT_HOLD_MS = 7000;  // how long a decision stays on screen
 const NEXT_PERSON_MS = 6000;  // re-verify the same person only after this long
 const CHALLENGE_S = 10;
 const CHALLENGE_MAX_FRAMES = 14;

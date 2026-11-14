@@ -50,6 +50,8 @@ def make_bundle() -> bytes:
         "api/thresholds.json": REPO / "api" / "thresholds.json",
         "api/models/dino_head.npz": REPO / "api" / "models" / "dino_head.npz",
         "api/enrollments.db": REPO / "api" / "enrollments.db",
+        # same admin password as the laptop; travels only in the private S3 bundle, never in git
+        "api/admin_password": REPO / "api" / "keys" / "admin_password",
         "kiosk-web/dist": dist,
     }
     buf = io.BytesIO()

@@ -13,6 +13,7 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .access import AccessRepository, schedule_from_payload, schedule_payload
+from .offline_cache import CacheSyncer, build_export
 from .aws_services import AwsServices, Metrics
 from .pqc import PQSigner, decision_payload
 from .challenge import ChallengeManager, events_in_order, server_turn_check
@@ -58,14 +59,32 @@ access = AccessRepository(settings.sqlite_path)
 th = settings.thresholds
 
 
-ADMIN_PIN = os.getenv("ADMIN_PIN", "2468")
+def _load_admin_password() -> str:
+    """Admin password: ADMIN_PASSWORD env, else the file ADMIN_PASSWORD_FILE (default api/keys/admin_password,
+    gitignored). If neither exists, a strong random password is generated into that file on first start."""
+    import secrets
+
+    if os.getenv("ADMIN_PASSWORD"):
+        return os.environ["ADMIN_PASSWORD"]
+    f = Path(os.getenv("ADMIN_PASSWORD_FILE", str(Path(__file__).resolve().parent.parent / "keys" / "admin_password")))
+    if f.exists() and f.read_text().strip():
+        return f.read_text().strip()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    pw = "hid-" + secrets.token_urlsafe(9)
+    f.write_text(pw)
+    log.warning("generated a new admin password in %s", f)
+    return pw
 
 
-def _require_admin(pin: str | None):
-    """Enrollment and user/schedule changes need the admin PIN (header X-Admin-Pin). Constant-time compare."""
+ADMIN_PASSWORD = _load_admin_password()
+
+
+def _require_admin(password: str | None):
+    """Enrollment, the enrolled list and user/schedule changes need the admin password
+    (header X-Admin-Password; X-Admin-Pin accepted for older kiosks). Constant-time compare."""
     import hmac
 
-    if not pin or not hmac.compare_digest(pin.encode(), ADMIN_PIN.encode()):
+    if not password or not hmac.compare_digest(password.encode(), ADMIN_PASSWORD.encode()):
         raise HTTPException(401, "Admin authentication required")
 
 
@@ -249,14 +268,14 @@ def get_metrics():
 
 
 @app.get("/access/schedules", response_model=list[AccessScheduleResponse])
-def list_schedules(x_admin_pin: str | None = Header(default=None)):
-    _require_admin(x_admin_pin)
+def list_schedules(x_admin_password: str | None = Header(default=None), x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_password or x_admin_pin)
     return [AccessScheduleResponse(**schedule_payload(item)) for item in access.all_schedules()]
 
 
 @app.get("/access/schedules/{user_id}", response_model=AccessScheduleResponse)
-def get_schedule(user_id: str, x_admin_pin: str | None = Header(default=None)):
-    _require_admin(x_admin_pin)
+def get_schedule(user_id: str, x_admin_password: str | None = Header(default=None), x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_password or x_admin_pin)
     schedule = access.get_schedule(user_id)
     if schedule is None:
         raise HTTPException(404, "No campus permission configured")
@@ -264,8 +283,8 @@ def get_schedule(user_id: str, x_admin_pin: str | None = Header(default=None)):
 
 
 @app.put("/access/schedules/{user_id}", response_model=AccessScheduleResponse)
-def put_schedule(user_id: str, req: AccessScheduleRequest, x_admin_pin: str | None = Header(default=None)):
-    _require_admin(x_admin_pin)
+def put_schedule(user_id: str, req: AccessScheduleRequest, x_admin_password: str | None = Header(default=None), x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_password or x_admin_pin)
     try:
         payload = req.model_dump()
         schedule = schedule_from_payload(user_id, payload)
@@ -276,8 +295,8 @@ def put_schedule(user_id: str, req: AccessScheduleRequest, x_admin_pin: str | No
 
 
 @app.delete("/access/schedules/{user_id}")
-def delete_schedule(user_id: str, x_admin_pin: str | None = Header(default=None)):
-    _require_admin(x_admin_pin)
+def delete_schedule(user_id: str, x_admin_password: str | None = Header(default=None), x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_password or x_admin_pin)
     access.delete_schedule(user_id)
     return {"ok": True}
 
@@ -300,8 +319,8 @@ def _grant_preset(user_id: str, preset: str) -> None:
 
 
 @app.post("/enroll", response_model=EnrollResponse)
-def enroll(req: EnrollRequest, x_admin_pin: str | None = Header(default=None)):
-    _require_admin(x_admin_pin)
+def enroll(req: EnrollRequest, x_admin_password: str | None = Header(default=None), x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_password or x_admin_pin)
     expires_at = (datetime.now(timezone.utc) + timedelta(seconds=req.expires_in_seconds)).isoformat() if req.expires_in_seconds else None
     if settings.stub_mode:
         stub_profiles[req.user_id] = {"user_id": req.user_id, "authority": req.authority, "active": req.active,
@@ -319,20 +338,20 @@ def enroll(req: EnrollRequest, x_admin_pin: str | None = Header(default=None)):
 
 
 @app.get("/users")
-def users(x_admin_pin: str | None = Header(default=None)):
-    _require_admin(x_admin_pin)
+def users(x_admin_password: str | None = Header(default=None), x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_password or x_admin_pin)
     return {"users": sorted(item["user_id"] for item in _user_profiles())}
 
 
 @app.get("/users/details", response_model=list[UserProfile])
-def user_details(x_admin_pin: str | None = Header(default=None)):
-    _require_admin(x_admin_pin)
+def user_details(x_admin_password: str | None = Header(default=None), x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_password or x_admin_pin)
     return [UserProfile(**item) for item in _user_profiles()]
 
 
 @app.patch("/users/{user_id}", response_model=UserProfile)
-def update_user(user_id: str, req: UserUpdateRequest, x_admin_pin: str | None = Header(default=None)):
-    _require_admin(x_admin_pin)
+def update_user(user_id: str, req: UserUpdateRequest, x_admin_password: str | None = Header(default=None), x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_password or x_admin_pin)
     current = _profile(user_id)
     if current is None:
         raise HTTPException(404, "User is not enrolled")
@@ -350,8 +369,8 @@ def update_user(user_id: str, req: UserUpdateRequest, x_admin_pin: str | None = 
 
 
 @app.delete("/users/{user_id}")
-def delete_user(user_id: str, x_admin_pin: str | None = Header(default=None)):
-    _require_admin(x_admin_pin)
+def delete_user(user_id: str, x_admin_password: str | None = Header(default=None), x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_password or x_admin_pin)
     if pipeline:
         pipeline.store.delete(user_id)
     elif settings.stub_mode:
@@ -560,6 +579,30 @@ def offline_ack(body: dict):
     """Central service accepted these events -> mark synced locally (minimum retention)."""
     access.mark_synced(list(body.get("event_ids", [])))
     return access.event_status()
+
+
+offline_cache = CacheSyncer(pipeline.store, access, settings.sqlite_path) if pipeline else None
+if offline_cache:
+    offline_cache.start()
+
+
+@app.get("/offline/cache-export")
+def offline_cache_export(x_admin_password: str | None = Header(default=None), x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_password or x_admin_pin)
+    """Central side: faces (templates only), profiles and schedules for edge kiosks' offline cache."""
+    _require_engine()
+    return build_export(pipeline.store, access)
+
+
+@app.get("/offline/cache-status")
+def offline_cache_status():
+    return offline_cache.status if offline_cache else {"enabled": False}
+
+
+@app.post("/offline/cache-refresh")
+def offline_cache_refresh():
+    """Edge side: pull the central cache now (also runs every CACHE_REFRESH_S in the background)."""
+    return offline_cache.refresh() if offline_cache else {"enabled": False}
 
 
 @app.get("/offline/status")

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, setAdminPin } from "../lib/api";
+import { askAdminPassword } from "../lib/adminPrompt";
 import { grabFrame } from "../lib/capture";
 import { qualityIssues } from "../lib/faceTracker";
 
@@ -15,17 +16,17 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
 
-  // the enrolled list is admin-only: shown only after the admin PIN is accepted by the API
+  // the enrolled list is admin-only: shown only after the admin password is accepted by the API
   const [unlocked, setUnlocked] = useState(false);
   const refresh = () => api.userDetails().then((u) => { setUsers(u); setUnlocked(true); })
     .catch(() => { setUsers([]); setUnlocked(false); });
   useEffect(() => { if (pin) refresh(); }, []);
-  const unlock = () => {
-    const p = window.prompt("Admin PIN to view enrolled people") || "";
+  const unlock = async () => {
+    const p = await askAdminPassword("Admin password to view enrolled people");
     if (!p) return;
     setPin(p); setAdminPin(p);
     api.userDetails().then((u) => { setUsers(u); setUnlocked(true); setStatus(""); })
-      .catch(() => { setPin(""); setAdminPin(""); setUnlocked(false); setStatus("Wrong admin PIN"); });
+      .catch(() => { setPin(""); setAdminPin(""); setUnlocked(false); setStatus("Wrong admin password"); });
   };
   const lock = () => { setPin(""); setAdminPin(""); setUsers([]); setUnlocked(false); };
   useEffect(() => {
@@ -37,7 +38,7 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
     // admin authentication only for the enroll ACTION (the page itself is open)
     let adminPin = pin;
     if (!adminPin) {
-      adminPin = window.prompt("Admin PIN required to enroll") || "";
+      adminPin = await askAdminPassword("Admin password required to enroll");
       if (!adminPin) return;
       setPin(adminPin);
       setAdminPin(adminPin);
@@ -132,7 +133,7 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
       <button disabled={!user.trim() || busy} onClick={enroll}>{busy ? "Capturing…" : "Capture & enroll"}</button>
       <p className="status">{status}</p>
       {!unlocked ? (
-        <button className="link" onClick={unlock}>🔒 Show enrolled people (admin PIN)</button>
+        <button className="link" onClick={unlock}>🔒 Show enrolled people (admin password)</button>
       ) : (<>
       <h3>Enrolled ({users.length}) <button className="link" onClick={lock}>lock</button></h3>
       <ul className="users">{users.map((u) => {

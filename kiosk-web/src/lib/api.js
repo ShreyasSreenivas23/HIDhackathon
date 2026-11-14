@@ -9,7 +9,7 @@ const TIMEOUT_MS = 10000;
 
 let adminPin = sessionStorage.getItem("hid-admin-pin") || "";
 export function setAdminPin(pin) { adminPin = pin || ""; sessionStorage.setItem("hid-admin-pin", adminPin); }
-const adminHeaders = () => (adminPin ? { "X-Admin-Pin": adminPin } : {});
+const adminHeaders = () => (adminPin ? { "X-Admin-Password": adminPin } : {});
 
 async function call(path, body, method = "POST", base = BASE, extraHeaders = {}) {
   const ctrl = new AbortController();

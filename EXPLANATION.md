@@ -146,7 +146,7 @@ So the head fixes real-person rejection but does not catch phone attacks on its 
 ---
 
 ## 8. Security and privacy
-- **Admin PIN** (`ADMIN_PIN`, default `2468`, constant-time compare) is required to **enroll**, **view the enrolled list**, change or delete users, and change schedules. The Enroll page opens freely; the PIN is asked when you enroll or unlock the list. `/health` never reveals user ids.
+- **Admin password** is required to **enroll**, **view the enrolled list**, change or delete users, and change schedules (header `X-Admin-Password`, constant-time compare). It is generated randomly on first start into `api/keys/admin_password` (gitignored), or set with the `ADMIN_PASSWORD` env var. The same password is shipped to AWS inside the private S3 bundle. The kiosk asks for it in a masked dialog when you enroll or unlock the list. `/health` never reveals user ids.
 - Stored biometrics are **templates only**, never photos (the optional S3 reference photo is off by default).
 - Debug frame dumps (`DEBUG_DUMP_DIR`) are a local development tool only: off in the cloud, and never used in offline mode.
 - On AWS, the EC2 port 80 accepts traffic **only from CloudFront's origin-facing IP range**. The S3 deploy bucket is private. The IAM role can only read its own bundle.
@@ -183,7 +183,7 @@ api/.venv/Scripts/python deploy/aws_deploy.py --update
 ```
 
 ## 13. Demo script (3 min)
-1. **Enroll** a volunteer (admin PIN), with campus access 24/7.
+1. **Enroll** a volunteer (admin password), with campus access 24/7.
 2. Volunteer steps up: **ALLOW**, name shown, ~1 s, "🔐 post-quantum signed".
 3. Hold up a **phone** with their photo: **DENY** (screen), still showing "recognised as …". Identity alone isn't enough.
 4. Dim the light or look away: **REQUEST VERIFICATION**, then *turn + smile*, then ALLOW.

@@ -22,6 +22,7 @@ ENV FACE_BACKEND=opencv \
     SQLITE_PATH=/srv/data/enrollments.db \
     KIOSK_DIST=/srv/kiosk-web/dist \
     PQC_KEY_DIR=/srv/data/keys \
+    ADMIN_PASSWORD_FILE=/srv/api/admin_password \
     YOLO_CONFIG_DIR=/tmp/ultralytics \
     PYTHONUNBUFFERED=1 \
     PORT=8080
