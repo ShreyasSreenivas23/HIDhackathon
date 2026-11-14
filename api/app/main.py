@@ -358,7 +358,9 @@ def challenge(req: ChallengeRequest):
     ok_live = not flat
     dev = ev.signals.get("device")
     tex = ev.signals.get("minifas")
-    ok_device = (dev is None or dev >= th.device_hard) and (tex is None or tex >= th.texture_hard)
+    dino = ev.signals.get("dino")
+    screen = tex is not None and tex < th.texture_hard and (dino is None or dino < th.dino_screen)
+    ok_device = (dev is None or dev >= th.device_hard) and not screen
     same_person = p.candidate_user is None or ev.identity_user == p.candidate_user
     ok_id = ev.identity_sim is not None and ev.identity_sim >= th.identity_hi and same_person
 

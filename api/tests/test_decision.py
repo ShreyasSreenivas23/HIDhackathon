@@ -142,3 +142,14 @@ def test_extremely_low_texture_is_hard_deny_but_low_is_not():
     assert o.decision == "DENY" and o.reasons == ["screen_texture"]
     o = decide(ev(liveness=0.03, signals={"minifas": 0.03, "device": 1.0}), TH)   # real people reached 0.022
     assert o.decision == "REQUEST_VERIFICATION"
+
+
+def test_screen_deny_needs_both_texture_models():
+    # live test: real person MiniFAS 0.005 but DINOv2 0.85 -> must NOT be called a screen
+    o = decide(ev(liveness=0.5, signals={"minifas": 0.005, "dino": 0.85, "device": 1.0}), TH)
+    assert o.decision == "REQUEST_VERIFICATION" and o.needs_challenge
+    # held-out phone attack that fooled DINOv2 (0.99) but not MiniFAS: must NOT be allowed
+    o = decide(ev(liveness=0.86, signals={"minifas": 0.008, "dino": 0.99, "device": 1.0}), TH)
+    assert o.decision == "REQUEST_VERIFICATION"
+    o = decide(ev(liveness=0.02, signals={"minifas": 0.005, "dino": 0.03, "device": 1.0}), TH)
+    assert o.decision == "DENY" and o.reasons == ["screen_texture"]

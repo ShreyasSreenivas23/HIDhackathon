@@ -63,8 +63,10 @@ def decide(ev: Evidence, th: Thresholds) -> Outcome:
     if dev is not None and dev < th.device_hard:
         return Outcome("DENY", round(1 - dev, 3), ["phone_detected"] + [r for r in ev.liveness_reasons if r != "phone_detected"], MESSAGES["DENY_SPOOF"])
 
-    tex = ev.signals.get("minifas")
-    if tex is not None and tex < th.texture_hard:
+    tex, dino = ev.signals.get("minifas"), ev.signals.get("dino")
+    # screen DENY only when the texture models AGREE: MiniFAS alone hit 0.005 on a real person (live test),
+    # while the GB10-trained DINOv2 head said 0.78-0.90 live; on phone attacks DINOv2 gave 0.001 / 0.031.
+    if tex is not None and tex < th.texture_hard and (dino is None or dino < th.dino_screen):
         return Outcome("DENY", round(1 - tex, 3), ["screen_texture"], MESSAGES["DENY_SPOOF"])
 
     if ev.quality_issues:
@@ -83,6 +85,12 @@ def decide(ev: Evidence, th: Thresholds) -> Outcome:
         return Outcome("DENY", round(conf, 3), [reason], MESSAGES["DENY_ID"])
 
     id_conf = identity_confidence(ev.identity_sim, th)
+    # texture models DISAGREE (MiniFAS says screen, DINOv2 says live): never ALLOW, never DENY -> challenge.
+    # Seen both ways in live data: real person (MiniFAS 0.005 / DINO 0.85) and a held-out phone attack
+    # (MiniFAS 0.008 / DINO 0.99). A real person passes the gestures; a phone cannot.
+    if tex is not None and tex < th.texture_hard:
+        return Outcome("REQUEST_VERIFICATION", round(min(L, id_conf), 3), ["liveness_uncertain", "texture_disagreement"],
+                       MESSAGES["CHALLENGE"], needs_challenge=True)
     if L >= th.liveness_hi and ev.identity_sim >= th.identity_hi:
         return Outcome("ALLOW", round(min(L, id_conf), 3), [], MESSAGES["ALLOW"])
 

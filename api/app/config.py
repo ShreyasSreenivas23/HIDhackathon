@@ -26,6 +26,7 @@ class Thresholds:
     texture_hard: float = 0.01         # MiniFAS below this -> hard DENY 'screen_texture'. Live data (26 real bursts,
                                        # warm dim hall): real min 0.022; phone attacks 0.0002/0.001/0.008/0.025.
                                        # Thin margin on small data -> re-check with eval/ before relying on it.
+    dino_screen: float = 0.30          # ...and DINOv2 head below this (both must agree for a screen DENY)
     planar_hard: float = 0.20          # planarity below this (clearly flat face) + low liveness -> hard DENY
     signal_flag: float = 0.40          # any signal below this is listed in `reasons`
     challenge_yaw: float = 0.12        # server-side yaw change vs own frontal pose to accept a turn (noise ~0.03; a tilted flat photo < 0.05)
@@ -36,7 +37,7 @@ class Thresholds:
     max_brightness: float = 0.92
     max_abs_yaw: float = 0.35
     # fusion weights for soft signals (device is a hard veto, not weighted)
-    weights: dict = field(default_factory=lambda: {"minifas": 1.0, "dino": 1.5, "planarity": 0.7})
+    weights: dict = field(default_factory=lambda: {"minifas": 0.3, "dino": 2.0, "planarity": 0.7})  # DINOv2 head is trained on this kiosk's domain
 
     @classmethod
     def load(cls, path: Path) -> "Thresholds":
