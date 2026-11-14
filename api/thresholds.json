@@ -1,0 +1,8 @@
+{
+  "_note": "Defaults. eval/calibrate.py overwrites this after measuring on validation data.",
+  "liveness_lo": 0.35,
+  "liveness_hi": 0.75,
+  "identity_lo": 0.28,
+  "identity_hi": 0.40,
+  "device_hard": 0.30
+}

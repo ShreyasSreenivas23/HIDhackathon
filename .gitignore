@@ -1,0 +1,34 @@
+# data & models (never commit biometric data or big weights)
+data/
+models/
+api/models/
+*.onnx
+*.pt
+*.pth
+*.joblib
+*.npy
+*.npz
+*.db
+eval/results/
+eval/captures/
+
+kiosk-web/public/mediapipe/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# node
+node_modules/
+dist/
+
+# misc
+.env
+.DS_Store
+Thumbs.db
+
+# local tooling
+.claude/

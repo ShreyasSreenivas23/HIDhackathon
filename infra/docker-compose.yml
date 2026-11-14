@@ -1,0 +1,16 @@
+# Edge mode (laptop). From repo root:  docker compose -f infra/docker-compose.yml up --build
+services:
+  api:
+    build: ../api
+    ports: ["8000:8000"]
+    environment:
+      STORE: sqlite
+      DET_SIZE: "320"
+      # AUDIT_BUCKET: hid-audit-xxxx      # uncomment + mount AWS creds to log frames to S3
+    volumes:
+      - ../api/models:/srv/models          # MiniFAS / YOLO / dino_head / insightface cache
+      - ../data/api:/srv/data              # enrollments.db
+      - ../api/thresholds.json:/srv/thresholds.json
+      - torch-hub:/root/.cache/torch       # DINOv2 weights cache
+volumes:
+  torch-hub:

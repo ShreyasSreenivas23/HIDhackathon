@@ -1,0 +1,7 @@
+-r requirements-core.txt
+# Real models. insightface needs a C++ compiler on Windows -> prefer the Docker image.
+insightface==0.7.3
+ultralytics>=8.3
+# DINOv2 head (CPU wheels are fine for inference; Dockerfile installs the CPU index)
+torch>=2.2
+torchvision>=0.17
