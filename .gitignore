@@ -34,3 +34,6 @@ Thumbs.db
 .claude/
 kiosk-web/public/test/
 gb10/config.env
+
+# siri backend secrets
+backend/.env
