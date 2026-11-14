@@ -30,6 +30,8 @@ nav button.on { background: var(--hid); color: white; border-color: var(--hid); 
 main { flex: 1; display: grid; grid-template-columns: 1.6fr 1fr; gap: 24px; padding: 24px; }
 aside { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 28px; display: flex; flex-direction: column; justify-content: center; }
 
+.left { display: flex; flex-direction: column; gap: 12px; }
+.debug { margin: 0; font-size: 12px; background: #000a; border: 1px solid var(--line); border-radius: 8px; padding: 10px; color: #9fe; max-height: 260px; overflow: auto; }
 .camera { position: relative; border-radius: 14px; overflow: hidden; background: #000; aspect-ratio: 16/9; align-self: start; }
 .camera video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .mirror { transform: scaleX(-1); }

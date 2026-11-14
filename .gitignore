@@ -32,3 +32,4 @@ Thumbs.db
 
 # local tooling
 .claude/
+kiosk-web/public/test/

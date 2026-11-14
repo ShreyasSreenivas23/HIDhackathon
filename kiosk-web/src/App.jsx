@@ -4,12 +4,16 @@ import ChallengePanel from "./components/ChallengePanel";
 import EnrollPanel from "./components/EnrollPanel";
 import OtpPanel from "./components/OtpPanel";
 import ResultPanel from "./components/ResultPanel";
-import { api } from "./lib/api";
+import { api, API_BASE } from "./lib/api";
+import { startCamera } from "./lib/camera";
 import { burst, grabFrame } from "./lib/capture";
-import { actionDone, analyzeFrame, initFaceTracker, qualityIssues } from "./lib/faceTracker";
+import { actionDone, analyzeFrame, initFaceTracker, QUALITY, qualityIssues } from "./lib/faceTracker";
+
+const DEBUG = new URLSearchParams(location.search).has("debug");
 
 const STABLE_MS = 600;        // quality must be OK this long before auto-capture
 const RESULT_HOLD_MS = 4000;  // how long a decision stays on screen
+const NEXT_PERSON_MS = 6000;  // re-verify the same person only after this long
 const CHALLENGE_S = 10;
 const CHALLENGE_MAX_FRAMES = 14;
 
@@ -20,6 +24,8 @@ export default function App() {
   const phaseRef = useRef("loading");
   const goodSinceRef = useRef(null);
   const challengeRef = useRef(null);
+  const awaitNextRef = useRef(null);   // after a decision, wait for the person to step away (or timeout)
+  const awayRef = useRef(null);
 
   const [tab, setTab] = useState("kiosk");
   const tabRef = useRef(tab);
@@ -43,7 +49,7 @@ export default function App() {
     setTimeout(() => {
       if (phaseRef.current !== "result") return;
       if (offerOtp) setPhase("otp");
-      else { goodSinceRef.current = null; setPhase("scanning"); }
+      else { goodSinceRef.current = null; awaitNextRef.current = performance.now(); setPhase("scanning"); }
     }, offerOtp ? 2500 : RESULT_HOLD_MS);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -56,10 +62,13 @@ export default function App() {
       const a = analysisRef.current || {};
       const frames = await burst(videoRef.current, 5, 100);
       const r = await api.verify(frames, { blur: a.blur, brightness: a.brightness, face_px: a.facePx, yaw: a.yaw });
+      setError("");
       showResult(r, performance.now() - t0);
     } catch (e) {
-      setError(String(e));
-      setPhase("scanning");
+      // show the error and pause before rescanning, instead of hammering the API in a tight loop
+      setError(e.message || String(e));
+      setPhase("error");
+      setTimeout(() => { goodSinceRef.current = null; if (phaseRef.current === "error") setPhase("scanning"); }, 3000);
     }
   }, [showResult]);
 
@@ -112,8 +121,7 @@ export default function App() {
     api.health().then(setHealth).catch(() => setHealth({ ok: false }));
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, facingMode: "user" }, audio: false });
-        videoRef.current.srcObject = stream;
+        await startCamera(videoRef.current);
         await initFaceTracker();
         setPhase("scanning");
       } catch (e) {
@@ -127,7 +135,15 @@ export default function App() {
         analysisRef.current = a;
         if (now - lastUi > 80) { setAnalysis(a); lastUi = now; }
         const p = phaseRef.current;
-        if (p === "scanning" && tabRef.current === "kiosk") {
+        if (awaitNextRef.current) {
+          // person must be gone for 0.7 s (one missed detection is not "gone"), or the timeout passes
+          awayRef.current = a?.faceCount ? null : (awayRef.current ?? now);
+          if ((awayRef.current && now - awayRef.current > 700) || now - awaitNextRef.current > NEXT_PERSON_MS) {
+            awaitNextRef.current = null;
+            awayRef.current = null;
+          }
+        }
+        if (p === "scanning" && tabRef.current === "kiosk" && !awaitNextRef.current) {
           if (qualityIssues(a).length === 0) {
             goodSinceRef.current ??= now;
             if (now - goodSinceRef.current > STABLE_MS) runVerify();
@@ -146,8 +162,9 @@ export default function App() {
   const tone = phase === "result" || phase === "otp"
     ? { ALLOW: "allow", DENY: "deny", REQUEST_VERIFICATION: "verify" }[result?.decision] || "idle"
     : phase === "challenge" ? "verify" : issues.length === 0 ? "ready" : "idle";
-  const caption = phase === "scanning" ? (issues[0] || "Hold still…")
-    : phase === "verifying" ? "Checking…" : phase === "loading" ? "Starting camera…" : null;
+  const caption = phase === "scanning" ? (awaitNextRef.current ? "Next person, please" : issues[0] || "Hold still…")
+    : phase === "verifying" ? "Checking…" : phase === "loading" ? "Starting camera…"
+    : phase === "error" ? "Can't reach the server — retrying…" : null;
 
   return (
     <div className="app">
@@ -158,12 +175,30 @@ export default function App() {
           <button className={tab === "enroll" ? "on" : ""} onClick={() => setTab("enroll")}>Enroll</button>
         </nav>
         <div className={`health ${health?.ok ? "ok" : "bad"}`}>
-          {health ? (health.ok ? (health.stub_mode ? "API: stub mode" : `API ok · ${health.enrolled} enrolled`) : "API offline") : "…"}
+          {health ? (health.ok ? (health.stub_mode ? "API: stub mode" : `API ok · ${health.enrolled} enrolled`) : `API offline (${API_BASE})`) : "…"}
         </div>
       </header>
 
       <main>
-        <CameraView videoRef={videoRef} analysis={analysis} tone={tone} caption={tab === "kiosk" ? caption : null} />
+        <div className="left">
+          <CameraView videoRef={videoRef} analysis={analysis} tone={tone} caption={tab === "kiosk" ? caption : null} />
+          {DEBUG && (
+            <pre className="debug">
+              {JSON.stringify({
+                phase,
+                faces: analysis?.faceCount ?? null,
+                facePx: analysis?.facePx && Math.round(analysis.facePx),
+                brightness: analysis?.brightness?.toFixed(2),
+                blur: analysis?.blur && Math.round(analysis.blur),
+                yaw: analysis?.yaw?.toFixed(2),
+                blink: analysis?.blink?.toFixed(2),
+                smile: analysis?.smile?.toFixed(2),
+                issues,
+                limits: QUALITY,
+              }, null, 1)}
+            </pre>
+          )}
+        </div>
         <aside>
           {tab === "enroll" ? (
             <EnrollPanel videoRef={videoRef} analysisRef={analysisRef} />
