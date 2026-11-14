@@ -127,7 +127,7 @@ def test_every_challenge_has_a_head_turn():
     cm = ChallengeManager()
     for _ in range(50):
         acts = cm.create(None, False).actions
-        assert len(acts) == 2 and sum(a.startswith("turn_") for a in acts) == 1
+        assert len(acts) == 2 and sum(a.startswith("turn_") for a in acts) == 1 and "smile" in acts
 
 
 def test_one_direction_turn_does_not_count_for_the_other():

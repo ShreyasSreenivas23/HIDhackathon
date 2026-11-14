@@ -9,7 +9,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .access import AccessRepository, schedule_from_payload, schedule_payload
@@ -46,6 +46,17 @@ metrics = Metrics()
 signer = PQSigner(Path(os.getenv("PQC_KEY_DIR", str(Path(__file__).resolve().parent.parent / "keys"))))
 access = AccessRepository(settings.sqlite_path)
 th = settings.thresholds
+
+
+ADMIN_PIN = os.getenv("ADMIN_PIN", "2468")
+
+
+def _require_admin(pin: str | None):
+    """Enrollment and user/schedule changes need the admin PIN (header X-Admin-Pin). Constant-time compare."""
+    import hmac
+
+    if not pin or not hmac.compare_digest(pin.encode(), ADMIN_PIN.encode()):
+        raise HTTPException(401, "Admin authentication required")
 
 
 def _require_engine():
@@ -93,8 +104,18 @@ def _apply_schedule(outcome: Outcome, user_id: str | None, *, at: datetime | Non
         return outcome, None
     if status.authorized:
         return outcome, status
-    if outcome.decision == "REQUEST_VERIFICATION":
-        return Outcome("DENY", 1.0, [status.reason], f"Access denied — {status.reason.replace('_', ' ')}"), status
+    # STEP-UP zone (surprise challenge 1): a live, recognised person just outside their window (grace) or a
+    # teacher/admin outside hours is not denied outright -> step-up verification (challenge, then OTP).
+    if outcome.decision in ("ALLOW", "REQUEST_VERIFICATION") and status.reason == "outside_schedule":
+        prof = _profile(user_id) or {}
+        sched = access.get_schedule(user_id)
+        grace = timedelta(minutes=int(os.getenv("SCHEDULE_GRACE_MIN", "15")))
+        t = at or datetime.now(timezone.utc)
+        near = sched is not None and (sched.evaluate(t + grace)[0] or sched.evaluate(t - grace)[0])
+        if near or prof.get("authority") in ("teacher", "admin"):
+            why = "schedule_grace_window" if near else "staff_outside_hours"
+            return Outcome("REQUEST_VERIFICATION", min(outcome.confidence, 0.6), ["outside_schedule", why],
+                           "Outside permitted hours — step-up verification required", needs_challenge=True), status
     return Outcome("DENY", 1.0, [status.reason], f"Access denied — {status.reason.replace('_', ' ')}"), status
 
 
@@ -232,7 +253,8 @@ def get_schedule(user_id: str):
 
 
 @app.put("/access/schedules/{user_id}", response_model=AccessScheduleResponse)
-def put_schedule(user_id: str, req: AccessScheduleRequest):
+def put_schedule(user_id: str, req: AccessScheduleRequest, x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_pin)
     try:
         payload = req.model_dump()
         schedule = schedule_from_payload(user_id, payload)
@@ -243,7 +265,8 @@ def put_schedule(user_id: str, req: AccessScheduleRequest):
 
 
 @app.delete("/access/schedules/{user_id}")
-def delete_schedule(user_id: str):
+def delete_schedule(user_id: str, x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_pin)
     access.delete_schedule(user_id)
     return {"ok": True}
 
@@ -266,7 +289,8 @@ def _grant_preset(user_id: str, preset: str) -> None:
 
 
 @app.post("/enroll", response_model=EnrollResponse)
-def enroll(req: EnrollRequest):
+def enroll(req: EnrollRequest, x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_pin)
     expires_at = (datetime.now(timezone.utc) + timedelta(seconds=req.expires_in_seconds)).isoformat() if req.expires_in_seconds else None
     if settings.stub_mode:
         stub_profiles[req.user_id] = {"user_id": req.user_id, "authority": req.authority, "active": req.active,
@@ -294,7 +318,8 @@ def user_details():
 
 
 @app.patch("/users/{user_id}", response_model=UserProfile)
-def update_user(user_id: str, req: UserUpdateRequest):
+def update_user(user_id: str, req: UserUpdateRequest, x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_pin)
     current = _profile(user_id)
     if current is None:
         raise HTTPException(404, "User is not enrolled")
@@ -312,7 +337,8 @@ def update_user(user_id: str, req: UserUpdateRequest):
 
 
 @app.delete("/users/{user_id}")
-def delete_user(user_id: str):
+def delete_user(user_id: str, x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_pin)
     if pipeline:
         pipeline.store.delete(user_id)
     elif settings.stub_mode:
@@ -360,6 +386,9 @@ def verify(req: VerifyRequest, force: str | None = None):
         p = challenges.create(a.evidence.identity_user, a.evidence.claimed)
         ch = Challenge(nonce=p.nonce, actions=p.actions)
     outcome, schedule = _apply_schedule(outcome, a.evidence.identity_user)
+    if outcome.decision == "REQUEST_VERIFICATION" and ch is None:
+        p = challenges.create(a.evidence.identity_user, a.evidence.claimed)
+        ch = Challenge(nonce=p.nonce, actions=p.actions)
     resp = _response(outcome, a.evidence, a.timings, ch if outcome.decision == "REQUEST_VERIFICATION" else None, schedule)
     _audit("verify", a, resp)
     return resp

@@ -35,7 +35,8 @@ class ChallengeManager:
 
     def create(self, candidate_user: str | None, claimed: bool) -> PendingChallenge:
         # always one head turn (gives the server 3D-parallax evidence) + one blink/smile, in random order
-        acts = [random.choice(["turn_left", "turn_right"]), random.choice(["blink", "smile"])]
+        # smile is mandatory: a rigid paper/3D mask cannot deform the mouth (blink works through eye holes)
+        acts = [random.choice(["turn_left", "turn_right"]), "smile"]
         random.shuffle(acts)
         ch = PendingChallenge(secrets.token_hex(4), acts, candidate_user, claimed)
         self.pending[ch.nonce] = ch

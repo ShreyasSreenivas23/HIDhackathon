@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../lib/api";
+import { api, setAdminPin } from "../lib/api";
 import { grabFrame } from "../lib/capture";
 import { qualityIssues } from "../lib/faceTracker";
 
@@ -11,6 +11,7 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
   const [active, setActive] = useState(true);
   const [duration, setDuration] = useState("");
   const [schedule, setSchedule] = useState("24x7");
+  const [pin, setPin] = useState(sessionStorage.getItem("hid-admin-pin") || "");
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
 
@@ -84,6 +85,10 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
   return (
     <div className="enroll">
       <h2>Enroll a person</h2>
+      <label>Admin PIN (required)
+        <input type="password" inputMode="numeric" autoComplete="off" placeholder="Admin PIN" value={pin}
+               onChange={(ev) => { setPin(ev.target.value); setAdminPin(ev.target.value); }} />
+      </label>
       <input placeholder="Employee ID / name" value={user} onChange={(e) => setUser(e.target.value)} />
       <label>Authority
         <select value={authority} onChange={(e) => setAuthority(e.target.value)}>
@@ -108,7 +113,7 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
           <option value="none">No access (recognised but denied)</option>
         </select>
       </label>
-      <button disabled={!user.trim() || busy} onClick={enroll}>{busy ? "Capturing…" : "Capture & enroll"}</button>
+      <button disabled={!user.trim() || !pin || busy} onClick={enroll}>{busy ? "Capturing…" : "Capture & enroll"}</button>
       <p className="status">{status}</p>
       <h3>Enrolled ({users.length})</h3>
       <ul className="users">{users.map((u) => {

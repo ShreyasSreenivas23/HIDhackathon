@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
 
-c = TestClient(app)
+c = TestClient(app, headers={"X-Admin-Pin": "2468"})
 
 
 def test_stub_flow():

@@ -7,14 +7,18 @@ const BASE = import.meta.env.VITE_API_BASE ?? `${location.protocol}//${location.
 const OFFLINE_BASE = import.meta.env.VITE_OFFLINE_API_BASE || BASE;
 const TIMEOUT_MS = 10000;
 
-async function call(path, body, method = "POST", base = BASE) {
+let adminPin = sessionStorage.getItem("hid-admin-pin") || "";
+export function setAdminPin(pin) { adminPin = pin || ""; sessionStorage.setItem("hid-admin-pin", adminPin); }
+const adminHeaders = () => (adminPin ? { "X-Admin-Pin": adminPin } : {});
+
+async function call(path, body, method = "POST", base = BASE, extraHeaders = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   let res;
   try {
     res = await fetch(`${base}${path}`, {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...extraHeaders },
       body: body ? JSON.stringify(body) : undefined,
       signal: ctrl.signal,
     });
@@ -52,11 +56,11 @@ export const api = {
   health: () => call("/health", null, "GET"),
   users: () => call("/users", null, "GET"),
   userDetails: () => call("/users/details", null, "GET"),
-  updateUser: (user_id, changes) => call(`/users/${encodeURIComponent(user_id)}`, changes, "PATCH"),
-  deleteUser: (user_id) => call(`/users/${encodeURIComponent(user_id)}`, null, "DELETE"),
+  updateUser: (user_id, changes) => call(`/users/${encodeURIComponent(user_id)}`, changes, "PATCH", BASE, adminHeaders()),
+  deleteUser: (user_id) => call(`/users/${encodeURIComponent(user_id)}`, null, "DELETE", BASE, adminHeaders()),
   schedules: () => call("/access/schedules", null, "GET"),
   schedule: (user_id) => call(`/access/schedules/${encodeURIComponent(user_id)}`, null, "GET"),
-  enroll: (user_id, frames, options = {}) => call("/enroll", { user_id, frames, ...options }),
+  enroll: (user_id, frames, options = {}) => call("/enroll", { user_id, frames, ...options }, "POST", BASE, adminHeaders()),
   verify: (frames, client_quality, claimed_user_id = null) => signed(call("/verify", { frames, client_quality, claimed_user_id })),
   challenge: (nonce, frames, client_events) => signed(call("/challenge", { nonce, frames, client_events })),
   otpRequest: (user_id) => call("/otp/request", { user_id }),

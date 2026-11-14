@@ -23,6 +23,8 @@ const REASON_TEXT = {
   head_turn_not_seen: "Head turn not seen",
   otp_invalid: "Invalid code",
   outside_schedule: "Outside permitted hours",
+  schedule_grace_window: "Just outside your hours — step-up check",
+  staff_outside_hours: "Staff outside hours — step-up check",
   permission_disabled: "Campus permission disabled",
   no_campus_permission: "No campus permission",
   no_cached_permission: "No cached campus permission",

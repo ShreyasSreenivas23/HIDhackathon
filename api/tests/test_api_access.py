@@ -11,7 +11,7 @@ from app.access import AccessRepository  # noqa: E402
 
 def test_schedule_controls_stub_decisions(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "access", AccessRepository(tmp_path / "access.db"))
-    client = TestClient(main.app)
+    client = TestClient(main.app, headers={"X-Admin-Pin": "2468"})
     client.post("/enroll", json={"user_id": "demo_user", "frames": ["x"]})
     schedule = {
         "enabled": True,
@@ -28,7 +28,7 @@ def test_schedule_controls_stub_decisions(tmp_path, monkeypatch):
 
 
 def test_stub_enrollment_updates_user_list():
-    client = TestClient(main.app)
+    client = TestClient(main.app, headers={"X-Admin-Pin": "2468"})
     user_id = "stub-enrolled-user"
     response = client.post("/enroll", json={"user_id": user_id, "frames": ["x", "y", "z"]})
     assert response.status_code == 200
@@ -38,7 +38,7 @@ def test_stub_enrollment_updates_user_list():
 
 
 def test_stub_verification_fails_closed_without_enrollment():
-    client = TestClient(main.app)
+    client = TestClient(main.app, headers={"X-Admin-Pin": "2468"})
     response = client.post("/verify?force=ALLOW", json={"frames": ["x"]})
     assert response.status_code == 200
     assert response.json()["decision"] == "DENY"
@@ -46,7 +46,7 @@ def test_stub_verification_fails_closed_without_enrollment():
 
 
 def test_user_profile_can_expire_and_be_disabled():
-    client = TestClient(main.app)
+    client = TestClient(main.app, headers={"X-Admin-Pin": "2468"})
     client.post("/enroll", json={"user_id": "temporary", "frames": ["x"], "authority": "teacher", "expires_in_seconds": 60})
     profile = next(item for item in client.get("/users/details").json() if item["user_id"] == "temporary")
     assert profile["authority"] == "teacher"
@@ -65,7 +65,7 @@ def test_user_profile_can_expire_and_be_disabled():
 
 def test_offline_verify_requires_cached_permission(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "access", AccessRepository(tmp_path / "access.db"))
-    client = TestClient(main.app)
+    client = TestClient(main.app, headers={"X-Admin-Pin": "2468"})
     denied = client.post("/offline/verify", json={
         "user_id": "unknown",
         "liveness": 0.99,
@@ -77,7 +77,7 @@ def test_offline_verify_requires_cached_permission(tmp_path, monkeypatch):
 
 def test_offline_sync_rejects_stale_allow(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "access", AccessRepository(tmp_path / "access.db"))
-    client = TestClient(main.app)
+    client = TestClient(main.app, headers={"X-Admin-Pin": "2468"})
     response = client.post("/offline/sync", json={
         "events": [{
             "event_id": "stale-1",
@@ -96,7 +96,7 @@ def test_enroll_grants_schedule_preset():
     os.environ.setdefault("STUB_MODE", "1")
     from fastapi.testclient import TestClient
     from app.main import app
-    c = TestClient(app)
+    c = TestClient(app, headers={"X-Admin-Pin": "2468"})
     c.post("/enroll", json={"user_id": "preset_default", "frames": ["x"]})
     assert c.get("/access/schedules/preset_default").status_code == 200          # default 24x7 granted
     c.post("/enroll", json={"user_id": "preset_none", "frames": ["x"], "schedule_preset": "none"})
@@ -104,3 +104,25 @@ def test_enroll_grants_schedule_preset():
     c.post("/enroll", json={"user_id": "preset_campus", "frames": ["x"], "schedule_preset": "campus_hours"})
     w = c.get("/access/schedules/preset_campus").json()["weekly"]
     assert set(w) == {"monday", "tuesday", "wednesday", "thursday", "friday"}
+
+
+def test_admin_pin_required_for_enroll_and_admin_actions():
+    import os
+    os.environ.setdefault("STUB_MODE", "1")
+    from fastapi.testclient import TestClient
+    from app.main import app
+    anon = TestClient(app)
+    assert anon.post("/enroll", json={"user_id": "x", "frames": ["x"]}).status_code == 401
+    assert anon.delete("/users/x").status_code == 401
+    assert anon.put("/access/schedules/x", json={"enabled": True, "timezone": "UTC", "weekly": {}, "exceptions": {}}).status_code == 401
+    bad = TestClient(app, headers={"X-Admin-Pin": "0000"})
+    assert bad.post("/enroll", json={"user_id": "x", "frames": ["x"]}).status_code == 401
+    ok = TestClient(app, headers={"X-Admin-Pin": "2468"})
+    assert ok.post("/enroll", json={"user_id": "x", "frames": ["x"]}).status_code == 200
+
+
+def test_challenge_always_turn_plus_smile():
+    from app.challenge import ChallengeManager
+    for _ in range(20):
+        a = ChallengeManager().create(None, False).actions
+        assert "smile" in a and any(x.startswith("turn_") for x in a)
