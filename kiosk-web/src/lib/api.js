@@ -2,7 +2,8 @@
 // Calls the API directly (CORS is open on the API) instead of through the Vite proxy: the proxy
 // silently stops working after Vite auto-restarts and then returns index.html for /api/*.
 // Point at another backend (e.g. AWS) with:  VITE_API_BASE=http://<host>:8000 npm run dev
-const BASE = import.meta.env.VITE_API_BASE || `${location.protocol}//${location.hostname}:8000`;
+// VITE_API_BASE="" (empty) = same origin: used when the API serves the kiosk itself (cloud / HTTPS deploy).
+const BASE = import.meta.env.VITE_API_BASE ?? `${location.protocol}//${location.hostname}:8000`;
 const OFFLINE_BASE = import.meta.env.VITE_OFFLINE_API_BASE || BASE;
 const TIMEOUT_MS = 10000;
 

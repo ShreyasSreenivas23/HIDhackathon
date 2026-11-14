@@ -38,3 +38,4 @@ gb10/config.env
 # siri backend secrets
 backend/.env
 api/keys/
+data/deploy_ctx/

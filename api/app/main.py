@@ -496,3 +496,11 @@ def offline_sync(req: OfflineSyncRequest):
         accepted.append(event.event_id)
     access.mark_synced(accepted)
     return {"accepted": accepted, "rejected": rejected, "sync": access.event_status()}
+
+# ---- serve the built kiosk from the same origin (cloud deploy: one HTTPS URL for UI + API) ----
+_KIOSK_DIST = Path(os.getenv("KIOSK_DIST", str(Path(__file__).resolve().parent.parent.parent / "kiosk-web" / "dist")))
+if _KIOSK_DIST.is_dir():
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/", StaticFiles(directory=str(_KIOSK_DIST), html=True), name="kiosk")   # after all API routes
+    log.info("serving kiosk UI from %s", _KIOSK_DIST)
