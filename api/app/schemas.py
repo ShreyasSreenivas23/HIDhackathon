@@ -1,6 +1,7 @@
 """Pydantic models — must match CONTRACT.md exactly."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -18,6 +19,9 @@ class ClientQuality(BaseModel):
 class EnrollRequest(BaseModel):
     user_id: str = Field(min_length=1, max_length=64)
     frames: list[str] = Field(min_length=1, max_length=10)
+    authority: Literal["student", "teacher", "admin"] = "student"
+    active: bool = True
+    expires_in_seconds: Optional[int] = Field(default=None, ge=1, le=31536000)
 
 
 class EnrollResponse(BaseModel):
@@ -26,6 +30,20 @@ class EnrollResponse(BaseModel):
     frames_used: int = 0
     quality: float = 0.0
     message: str = ""
+
+
+class UserProfile(BaseModel):
+    user_id: str
+    authority: Literal["student", "teacher", "admin"] = "student"
+    active: bool = True
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class UserUpdateRequest(BaseModel):
+    authority: Optional[Literal["student", "teacher", "admin"]] = None
+    active: Optional[bool] = None
+    expires_in_seconds: Optional[int] = Field(default=None, ge=0, le=31536000)
 
 
 class VerifyRequest(BaseModel):
@@ -77,6 +95,59 @@ class VerifyResponse(BaseModel):
     quality: Quality = Quality()
     challenge: Optional[Challenge] = None
     timings_ms: dict[str, float] = {}
+    schedule: Optional["ScheduleStatus"] = None
+    offline: Optional["OfflineStatus"] = None
+
+
+class AccessWindowModel(BaseModel):
+    start: str
+    end: str
+
+
+class AccessScheduleRequest(BaseModel):
+    enabled: bool = False
+    timezone: str = "UTC"
+    weekly: dict[str, list[AccessWindowModel]] = {}
+    exceptions: dict[str, Optional[list[AccessWindowModel]]] = {}
+
+
+class AccessScheduleResponse(AccessScheduleRequest):
+    user_id: str
+    updated_at: float
+
+
+class ScheduleStatus(BaseModel):
+    authorized: bool
+    reason: str
+    timezone: str
+    evaluated_at: datetime
+
+
+class OfflineStatus(BaseModel):
+    local: bool = False
+    sync_status: Literal["not_applicable", "pending", "synced", "rejected"] = "not_applicable"
+    event_id: Optional[str] = None
+
+
+class OfflineVerifyRequest(BaseModel):
+    user_id: str
+    liveness: Optional[float] = None
+    identity_similarity: Optional[float] = None
+    signals: dict[str, Optional[float]] = {}
+    occurred_at: Optional[datetime] = None
+    challenge_completed: bool = False
+
+
+class OfflineSyncEvent(BaseModel):
+    event_id: str
+    user_id: Optional[str] = None
+    decision: Decision
+    occurred_at: datetime
+    payload: dict = {}
+
+
+class OfflineSyncRequest(BaseModel):
+    events: list[OfflineSyncEvent] = Field(default_factory=list, max_length=100)
 
 
 class OtpRequest(BaseModel):

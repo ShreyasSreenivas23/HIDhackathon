@@ -26,6 +26,7 @@ nav button.on { background: var(--hid); color: white; border-color: var(--hid); 
 .health { margin-left: auto; font-size: 13px; padding: 4px 10px; border-radius: 12px; }
 .health.ok { background: #12351f; color: #7be3a0; }
 .health.bad { background: #3b1414; color: #ff9b9b; }
+.sync { color: #ffd27a; }
 
 main { flex: 1; display: grid; grid-template-columns: 1.6fr 1fr; gap: 24px; padding: 24px; }
 aside { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 28px; display: flex; flex-direction: column; justify-content: center; }
@@ -58,6 +59,10 @@ aside { background: var(--panel); border: 1px solid var(--line); border-radius: 
 .badge.verify { background: var(--verify); color: #1b1300; }
 .message { font-size: 20px; margin: 16px 0 4px; }
 .who { color: var(--muted); margin: 0; }
+.offline-note, .schedule-note { padding: 8px 10px; border-radius: 6px; margin: 8px 0; font-size: 14px; }
+.offline-note { background: #3b1414; color: #ffb0b0; }
+.schedule-note.scheduled { background: #12351f; color: #7be3a0; }
+.schedule-note.not-scheduled { background: #3b1414; color: #ffb0b0; }
 
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0; }
 .stats div { background: #0b1530; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; }
@@ -90,3 +95,8 @@ button.link { background: none; border: 0; color: var(--muted); text-decoration:
 .err { color: #ff9b9b; font-size: 14px; }
 .status { color: var(--muted); min-height: 1.2em; }
 .users { color: var(--muted); padding-left: 20px; margin: 0; }
+.users li { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0; }
+.users .remove-user { padding: 4px 8px; font-size: 13px; background: #7d2630; }
+.enroll label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
+.enroll select { font: inherit; padding: 8px; border-radius: 6px; background: #0b1530; color: var(--text); border: 1px solid var(--line); }
+.enroll .check { flex-direction: row; align-items: center; }

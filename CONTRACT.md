@@ -13,13 +13,27 @@ All images are **base64 JPEG strings** (with or without a `data:image/jpeg;base6
 ## POST /enroll
 Request:
 ```json
-{ "user_id": "alice", "frames": ["<b64>", "<b64>", "<b64>"] }
+{
+  "user_id": "alice",
+  "frames": ["<b64>", "<b64>", "<b64>"],
+  "authority": "student",
+  "active": true,
+  "expires_in_seconds": 60
+}
 ```
 Response:
 ```json
 { "ok": true, "user_id": "alice", "frames_used": 3, "quality": 0.93, "message": "" }
 ```
 `ok:false` + `message` if no face / several faces / low quality.
+
+`authority` is `student`, `teacher`, or `admin`. `active` controls whether
+the enrollment is enabled. `expires_in_seconds` is optional; omit it for no
+expiry. An enabled enrollment can still be denied after its expiry time.
+Use `GET /users/details` to view `active`, `expires_at`, and `authority`.
+Use `PATCH /users/{user_id}` to change these fields. Send
+`{"expires_in_seconds": 0}` to clear an existing expiry without re-enrolling.
+`DELETE /users/{user_id}` removes the enrollment.
 
 ## POST /verify
 Request:
@@ -74,6 +88,62 @@ Computed on **raw (unmirrored) camera frames**:
 - `turn_right` = user turns head to **their** right → kiosk: `yaw_proxy < −0.30`; server: yaw of most frontal frame − min(yaw) ≥ 0.12
 - `blink` = MediaPipe `eyeBlinkLeft` and `eyeBlinkRight` both > 0.5
 - `smile` = MediaPipe `mouthSmileLeft` and `mouthSmileRight` both > 0.5
+
+## Campus access schedules
+
+Schedules are evaluated by the backend using the configured IANA timezone; the
+browser clock is never used for authorization. `weekly` keys are
+`monday` through `sunday`, and each window is half-open (`start` inclusive,
+`end` exclusive). An exception value of `null` blocks a date; a list replaces
+the weekly windows for that date.
+
+```http
+PUT /access/schedules/alice
+Content-Type: application/json
+```
+
+```json
+{
+  "enabled": true,
+  "timezone": "America/New_York",
+  "weekly": {
+    "monday": [{"start": "08:00", "end": "18:00"}],
+    "tuesday": [{"start": "08:00", "end": "18:00"}]
+  },
+  "exceptions": {"2026-12-25": null}
+}
+```
+
+Use `GET /access/schedules` to retrieve configured permissions and
+`GET /access/schedules/{user_id}` for one user. A real biometric `ALLOW`
+without an enabled, in-window schedule becomes `DENY` with
+`no_campus_permission`, `permission_disabled`, or `outside_schedule`.
+`VerifyResponse.schedule` reports the authoritative evaluation.
+
+## Offline mode
+
+`POST /offline/verify` is the local decision endpoint. It accepts only local
+biometric scores and a cached user schedule; missing/expired permissions,
+unknown identities, uncertain scores, and device spoof signals fail closed.
+It never accepts raw frames and queues only an event ID, user ID, decision,
+timestamp, and score metadata in SQLite.
+
+```json
+{
+  "user_id": "alice",
+  "liveness": 0.92,
+  "identity_similarity": 0.71,
+  "signals": {"device": 1.0},
+  "occurred_at": "2026-11-16T14:00:00Z"
+}
+```
+
+Use `GET /offline/status` to inspect pending local events. When connectivity
+returns, the kiosk sends them to `POST /offline/sync`; duplicate event IDs are
+idempotent. Server-side schedule validation rejects stale or invalid cached
+`ALLOW` events. If no local biometric service is configured, the browser
+displays OFFLINE MODE and denies rather than treating network failure as
+authorization.
 
 ## POST /otp/request, POST /otp/verify  (simulated fallback)
 ```json
