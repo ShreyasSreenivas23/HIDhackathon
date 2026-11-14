@@ -1,5 +1,6 @@
 const REASON_TEXT = {
   phone_detected: "Face shown on a phone / screen",
+  screen_texture: "Phone / screen detected (screen texture)",
   texture_spoof: "Image texture looks unusual — quick check needed",
   planar_motion: "Face looks flat (photo or screen)",
   low_liveness: "Liveness too low",

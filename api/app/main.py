@@ -186,7 +186,8 @@ def challenge(req: ChallengeRequest):
     flat = plan is not None and plan < th.planar_hard
     ok_live = not flat
     dev = ev.signals.get("device")
-    ok_device = dev is None or dev >= th.device_hard
+    tex = ev.signals.get("minifas")
+    ok_device = (dev is None or dev >= th.device_hard) and (tex is None or tex >= th.texture_hard)
     same_person = p.candidate_user is None or ev.identity_user == p.candidate_user
     ok_id = ev.identity_sim is not None and ev.identity_sim >= th.identity_hi and same_person
 
@@ -198,7 +199,7 @@ def challenge(req: ChallengeRequest):
         reasons = ["challenge_failed"]
         reasons += [] if ok_events else ["actions_not_completed"]
         reasons += [] if ok_turns else ["head_turn_not_seen"]
-        reasons += [] if ok_device else ["phone_detected"]
+        reasons += [] if ok_device else (["phone_detected"] if dev is not None and dev < th.device_hard else ["screen_texture"])
         reasons += [] if ok_live else ["planar_motion"]
         reasons += [] if ok_id else ["identity_uncertain"]
         outcome = Outcome("DENY", 0.8, reasons, "Challenge failed — use OTP instead")

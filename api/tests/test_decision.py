@@ -135,3 +135,10 @@ def test_one_direction_turn_does_not_count_for_the_other():
     burst = [_face(0)] * 2 + [_face(0.5)] * 6 + [_face(0.3)] * 2
     assert server_turn_check(["turn_right"], burst, 0.12)
     assert not server_turn_check(["turn_left"], burst, 0.12)
+
+
+def test_extremely_low_texture_is_hard_deny_but_low_is_not():
+    o = decide(ev(liveness=0.005, signals={"minifas": 0.005, "device": 1.0}), TH)
+    assert o.decision == "DENY" and o.reasons == ["screen_texture"]
+    o = decide(ev(liveness=0.03, signals={"minifas": 0.03, "device": 1.0}), TH)   # real people reached 0.022
+    assert o.decision == "REQUEST_VERIFICATION"
