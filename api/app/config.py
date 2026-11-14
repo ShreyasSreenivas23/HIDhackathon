@@ -28,7 +28,7 @@ class Thresholds:
     challenge_yaw: float = 0.20        # server-side |yaw_proxy| needed to accept a turn action
     # quality gate (server side; client has its own copy)
     min_face_px: int = 90
-    min_blur: float = 40.0             # Laplacian variance on the face crop
+    min_blur: float = 25.0             # Laplacian variance on the face resized to 112px (soft webcam ~130, very blurry ~15)
     min_brightness: float = 0.18
     max_brightness: float = 0.92
     max_abs_yaw: float = 0.35

@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,13 +59,33 @@ def _response(outcome: Outcome, ev: Evidence, timings: dict, challenge: Challeng
     )
     # structured log line -> CloudWatch Logs in cloud mode (metric filters on decision / total ms)
     log.info("DECISION %s", json.dumps({"decision": resp.decision, "reasons": resp.reasons,
-                                        "liveness": resp.liveness.score, "sim": resp.identity.similarity,
-                                        "total_ms": timings.get("total")}))
+                                        "liveness": resp.liveness.score, "signals": resp.liveness.signals,
+                                        "sim": resp.identity.similarity, "user": resp.identity.user_id,
+                                        "quality": ev.quality_metrics, "total_ms": timings.get("total")}))
     return resp
+
+
+def _debug_dump(kind: str, analysis, resp: VerifyResponse) -> None:
+    """DEBUG_DUMP_DIR=<dir>: save each request's frames + response locally (for tuning thresholds). Dev only."""
+    d = os.getenv("DEBUG_DUMP_DIR")
+    if not d or analysis is None or not analysis.frames:
+        return
+
+    def _save():
+        from .imaging import encode_jpeg
+
+        out = Path(d) / f"{int(time.time() * 1000)}_{kind}_{resp.decision}"
+        out.mkdir(parents=True, exist_ok=True)
+        for i, f in enumerate(analysis.frames):
+            (out / f"frame_{i}.jpg").write_bytes(encode_jpeg(f, 92))
+        (out / "response.json").write_text(resp.model_dump_json(indent=2))
+
+    threading.Thread(target=_save, daemon=True).start()
 
 
 def _audit(kind: str, analysis, resp: VerifyResponse) -> None:
     """Optional: store best frame + decision in S3 (background thread, never blocks the response)."""
+    _debug_dump(kind, analysis, resp)
     if not settings.audit_bucket or analysis is None or analysis.best_idx is None:
         return
 

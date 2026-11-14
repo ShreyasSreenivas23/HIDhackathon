@@ -55,8 +55,13 @@ def letterbox(img: np.ndarray, size: int) -> np.ndarray:
     return cv2.copyMakeBorder(img, dh // 2, dh - dh // 2, dw // 2, dw - dw // 2, cv2.BORDER_REFLECT_101)
 
 
+BLUR_SIZE = 112   # measure sharpness on a fixed-size face so the score does not depend on resolution
+
+
 def face_quality(img: np.ndarray, bbox) -> dict:
-    """blur = Laplacian variance of face crop, brightness = mean V in [0,1], face_px = bbox short side."""
+    """blur = Laplacian variance of the face resized to 112x112 (scale-independent; measured on a test face:
+    sharp ~280, soft webcam ~130, blurry ~50, very blurry ~15), brightness = mean gray in [0,1],
+    face_px = bbox short side."""
     x1, y1, x2, y2 = [int(v) for v in bbox[:4]]
     h, w = img.shape[:2]
     x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
@@ -64,8 +69,9 @@ def face_quality(img: np.ndarray, bbox) -> dict:
     if face.size == 0:
         return {"blur": 0.0, "brightness": 0.0, "face_px": 0.0}
     gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+    norm = cv2.resize(gray, (BLUR_SIZE, BLUR_SIZE), interpolation=cv2.INTER_AREA)
     return {
-        "blur": float(cv2.Laplacian(gray, cv2.CV_64F).var()),
+        "blur": float(cv2.Laplacian(norm, cv2.CV_64F).var()),
         "brightness": float(gray.mean() / 255.0),
         "face_px": float(min(x2 - x1, y2 - y1)),
     }

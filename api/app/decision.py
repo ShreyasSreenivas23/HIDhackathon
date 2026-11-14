@@ -27,6 +27,7 @@ class Evidence:
     face_found: bool = True
     multiple_faces: bool = False
     quality_issues: list[str] = field(default_factory=list)
+    quality_metrics: dict = field(default_factory=dict)
     liveness: float | None = None
     liveness_reasons: list[str] = field(default_factory=list)
     signals: dict[str, float | None] = field(default_factory=dict)

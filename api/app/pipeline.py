@@ -158,6 +158,9 @@ class Pipeline:
             return Analysis(ev, t.done(), frames, faces)
         ev.multiple_faces = multiple
         best = self._best_frame(frames, faces)
+        q = face_quality(frames[best], faces[best].bbox)
+        ev.quality_metrics = {k: round(v, 2) for k, v in q.items()} | {"yaw": round(yaw_proxy(faces[best].kps), 3),
+                                                                       "frame": f"{frames[best].shape[1]}x{frames[best].shape[0]}"}
         if check_quality:
             ev.quality_issues = self._quality_issues(frames[best], faces[best])
 
@@ -172,17 +175,24 @@ class Pipeline:
 
     def enroll(self, user_id: str, frames_b64: list[str]) -> tuple[bool, int, float, str]:
         frames = [decode_b64_image(f) for f in frames_b64]
-        embs, quals = [], []
+        embs, quals, problems = [], [], set()
         for img in frames:
             faces = self.faces.detect(img)
-            if not faces or (len(faces) > 1 and faces[1].size > 0.5 * faces[0].size):
-                continue   # no face, or two people in frame
-            if self._quality_issues(img, faces[0]):
+            if not faces:
+                problems.add("no_face")
+                continue
+            if len(faces) > 1 and faces[1].size > 0.5 * faces[0].size:
+                problems.add("multiple_faces")
+                continue
+            issues = self._quality_issues(img, faces[0])
+            if issues:
+                problems.update(issues)
+                log.info("enroll frame rejected: %s %s", issues, face_quality(img, faces[0].bbox))
                 continue
             embs.append(self.faces.embed(img, faces[0]))
             quals.append(faces[0].det_score)
         if not embs:
-            return False, 0, 0.0, "No usable frame: one clear, frontal, well-lit face needed"
+            return False, 0, 0.0, "No usable frame (" + ", ".join(sorted(problems)) + ")"
         template = np.mean(embs, axis=0)
         template /= np.linalg.norm(template) + 1e-9
         self.store.upsert(user_id, template.astype(np.float32))
