@@ -46,3 +46,20 @@ def test_offline_event_queue_is_idempotent(tmp_path):
     assert len(repo.pending_events()) == 1
     repo.mark_synced(["event-1"])
     assert repo.event_status() == {"pending": 0, "synced": 1}
+
+
+def test_expired_duplicate_does_not_shadow_valid_enrollment():
+    import numpy as np
+    from types import SimpleNamespace
+    from app.config import Thresholds
+    from app.pipeline import Pipeline
+
+    e = np.zeros(8, np.float32); e[0] = 1
+    near = e.copy(); near[1] = 0.05; near /= np.linalg.norm(near)
+    profiles = {"SHREYAS": {"active": True, "expires_at": "2000-01-01T00:00:00+00:00"}, "shreyas": {"active": True, "expires_at": None}}
+    p = Pipeline.__new__(Pipeline)
+    p.th = Thresholds()
+    p.store = SimpleNamespace(all=lambda: {"SHREYAS": e, "shreyas": near}, profile=lambda u: profiles[u])
+    assert p._best_valid_match(e)[0] == "shreyas"                 # valid duplicate wins
+    profiles["shreyas"]["active"] = False
+    assert p._best_valid_match(e)[0] == "SHREYAS"                 # only invalid ones -> report top (expired)

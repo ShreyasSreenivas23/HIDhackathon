@@ -48,7 +48,15 @@ import { enforce } from "./pqc";
 const pqcKey = () => call("/pqc/public-key", null, "GET");
 let stubMode = false;
 export function setStubMode(v) { stubMode = !!v; }
-const signed = (p) => p.then((r) => enforce(r, pqcKey, { stub: stubMode }));
+const signed = (p) => p.then((r) => enforce(r, pqcKey, { stub: stubMode, source: "central" }));
+// offline decisions are signed by the LOCAL edge API with its own ML-DSA key -> verify against that key
+const pqcKeyLocal = () => call("/pqc/public-key", null, "GET", OFFLINE_BASE);
+const signedLocal = (p) => p.then((r) => enforce(r, pqcKeyLocal, { stub: stubMode, source: "edge" }));
+
+export async function pinSigningKeys() {
+  const { loadPublicKey } = await import("./pqc");
+  await Promise.allSettled([loadPublicKey(pqcKey, "central"), OFFLINE_BASE !== BASE ? loadPublicKey(pqcKeyLocal, "edge") : null]);
+}
 
 export const API_BASE = BASE;
 export const OFFLINE_API_BASE = OFFLINE_BASE;
@@ -63,14 +71,14 @@ export const api = {
   enroll: (user_id, frames, options = {}) => call("/enroll", { user_id, frames, ...options }, "POST", BASE, adminHeaders()),
   verify: (frames, client_quality, claimed_user_id = null) => signed(call("/verify", { frames, client_quality, claimed_user_id })),
   challenge: (nonce, frames, client_events, offline = false) =>
-    signed(call("/challenge", { nonce, frames, client_events }, "POST", offline ? OFFLINE_BASE : BASE)),
+    (offline ? signedLocal : signed)(call("/challenge", { nonce, frames, client_events }, "POST", offline ? OFFLINE_BASE : BASE)),
   // offline mode: full pipeline on the local (edge) API, stricter policy, decision queued for sync
-  offlineVerifyFrames: (frames, client_quality) => signed(call("/offline/verify-frames", { frames, client_quality }, "POST", OFFLINE_BASE)),
+  offlineVerifyFrames: (frames, client_quality) => signedLocal(call("/offline/verify-frames", { frames, client_quality }, "POST", OFFLINE_BASE)),
   localPending: () => call("/offline/pending", null, "GET", OFFLINE_BASE),
   localAck: (event_ids) => call("/offline/ack", { event_ids }, "POST", OFFLINE_BASE),
   otpRequest: (user_id) => call("/otp/request", { user_id }),
   otpVerify: (user_id, code) => signed(call("/otp/verify", { user_id, code })),
-  offlineVerify: (payload) => signed(call("/offline/verify", payload, "POST", OFFLINE_BASE)),
+  offlineVerify: (payload) => signedLocal(call("/offline/verify", payload, "POST", OFFLINE_BASE)),
   pqcPublicKey: pqcKey,
   offlineStatus: () => call("/offline/status", null, "GET", OFFLINE_BASE),
   offlineSync: (events) => call("/offline/sync", { events }, "POST", BASE),   // to the CENTRAL service

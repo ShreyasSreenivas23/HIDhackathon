@@ -176,9 +176,45 @@ class Pipeline:
         ev.liveness, ev.liveness_reasons = fuse(ev.signals, self.th.weights, self.th.signal_flag)
         t.mark("liveness")
         emb = id_fut.result()
-        ev.identity_user, ev.identity_sim = search(self.store.all(), emb, claimed_user_id)
+        ev.identity_user, ev.identity_sim = self._best_valid_match(emb, claimed_user_id)
         t.mark("identity")
         return Analysis(ev, t.done(), frames, faces, best)
+
+    def _valid(self, user_id: str) -> bool:
+        prof = self.store.profile(user_id) if hasattr(self.store, "profile") else None
+        if not prof:
+            return True
+        if not prof.get("active", True):
+            return False
+        exp = prof.get("expires_at")
+        if exp:
+            from datetime import datetime, timezone
+
+            try:
+                return datetime.fromisoformat(exp).astimezone(timezone.utc) > datetime.now(timezone.utc)
+            except ValueError:
+                return True
+        return True
+
+    def _best_valid_match(self, emb, claimed_user_id=None):
+        """Same person enrolled twice (e.g. 'shreyas' + an expired 'SHREYAS'): don't let an expired/inactive
+        duplicate shadow a valid enrollment that also matches confidently. Otherwise report the top match
+        (so 'enrollment_expired' / 'user_inactive' still surface when it is the only match)."""
+        gallery = self.store.all()
+        if claimed_user_id is not None or not gallery:
+            return search(gallery, emb, claimed_user_id)
+        ids = list(gallery)
+        sims = np.stack([gallery[i] for i in ids]) @ emb
+        order = np.argsort(-sims)
+        top = ids[order[0]], float(sims[order[0]])
+        if self._valid(top[0]):
+            return top
+        for j in order[1:]:
+            if float(sims[j]) < self.th.identity_hi:
+                break
+            if self._valid(ids[j]):
+                return ids[j], float(sims[j])
+        return top
 
     def enroll(self, user_id: str, frames_b64: list[str], *, authority="student", active=True, expires_at=None) -> tuple[bool, int, float, str]:
         frames = [decode_b64_image(f) for f in frames_b64]

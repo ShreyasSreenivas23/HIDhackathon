@@ -4,7 +4,7 @@ import ChallengePanel from "./components/ChallengePanel";
 import EnrollPanel from "./components/EnrollPanel";
 import OtpPanel from "./components/OtpPanel";
 import ResultPanel from "./components/ResultPanel";
-import { api, API_BASE, cacheSchedules, queueOfflineEvent, syncOfflineEvents , setStubMode , HAS_LOCAL_FALLBACK, syncLocalDecisions } from "./lib/api";
+import { api, API_BASE, cacheSchedules, queueOfflineEvent, syncOfflineEvents , setStubMode , HAS_LOCAL_FALLBACK, syncLocalDecisions , pinSigningKeys } from "./lib/api";
 import { startCamera } from "./lib/camera";
 import { burst, grabFrame } from "./lib/capture";
 import { actionDone, analyzeFrame, initFaceTracker, QUALITY, qualityIssues } from "./lib/faceTracker";
@@ -161,6 +161,7 @@ export default function App() {
     const checkHealth = () => api.health().then((value) => {
       setHealth(value);
       setStubMode(value.stub_mode);
+      pinSigningKeys();
       setOnline(true);
       cacheSchedules(value.schedules || []);
       if (phaseRef.current === "result" && resultRef.current?.offline?.local === false) {

@@ -86,7 +86,7 @@ export default function ResultPanel({ result, clientMs, thresholds }) {
       {result.pqc && (
         <div className={`pqc ${result.pqc.ok ? "ok" : "bad"}`}>
           {result.pqc.ok
-            ? <>🔐 Post-quantum signed · {result.pqc.alg} verified in {result.pqc.ms} ms · key {result.pqc.key_id?.slice(0, 8)}</>
+            ? <>🔐 Post-quantum signed · {result.pqc.alg} verified in {result.pqc.ms} ms · {result.pqc.signer === "edge" ? "local edge key" : "key"} {result.pqc.key_id?.slice(0, 8)}</>
             : <>⚠ Signature check: {result.pqc.reason}</>}
         </div>
       )}
