@@ -68,7 +68,7 @@ class Settings:
         self.enable_device = _flag("ENABLE_DEVICE")
         self.enable_planarity = _flag("ENABLE_PLANARITY")
         self.minifas_model = self.models_dir / os.getenv("MINIFAS_FILE", "minifas_best_model.onnx")
-        self.dino_head = self.models_dir / os.getenv("DINO_HEAD_FILE", "dino_head.joblib")
+        self.dino_head = self.models_dir / os.getenv("DINO_HEAD_FILE", "dino_head.npz")
         self.yolo_model = self.models_dir / os.getenv("YOLO_FILE", "yolo11n.pt")
         self.thresholds = Thresholds.load(self.thresholds_file)
 
