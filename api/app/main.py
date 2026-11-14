@@ -30,7 +30,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("api")
 
 app = FastAPI(title="HID Spot-a-Spoof", version="0.1.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+                   allow_private_network=True)   # cloud (HTTPS) kiosk may reach this laptop API in offline mode
+
+
+@app.middleware("http")
+async def private_network_access(request, call_next):
+    """Chrome/Brave Private Network Access: the cloud kiosk (public HTTPS) may call this laptop API offline."""
+    resp = await call_next(request)
+    if request.headers.get("access-control-request-private-network"):
+        resp.headers["Access-Control-Allow-Private-Network"] = "true"
+    return resp
 
 pipeline = None
 if not settings.stub_mode:
@@ -211,7 +221,6 @@ def health():
         "pqc": {k: v for k, v in signer.public_info().items() if k != "public_key_b64"},
         "aws": aws.enabled,
         "offline_events_pending": pending,
-        "schedules": [schedule_payload(item) for item in access.all_schedules()],
     }
 
 
@@ -240,12 +249,14 @@ def get_metrics():
 
 
 @app.get("/access/schedules", response_model=list[AccessScheduleResponse])
-def list_schedules():
+def list_schedules(x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_pin)
     return [AccessScheduleResponse(**schedule_payload(item)) for item in access.all_schedules()]
 
 
 @app.get("/access/schedules/{user_id}", response_model=AccessScheduleResponse)
-def get_schedule(user_id: str):
+def get_schedule(user_id: str, x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_pin)
     schedule = access.get_schedule(user_id)
     if schedule is None:
         raise HTTPException(404, "No campus permission configured")
@@ -308,12 +319,14 @@ def enroll(req: EnrollRequest, x_admin_pin: str | None = Header(default=None)):
 
 
 @app.get("/users")
-def users():
+def users(x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_pin)
     return {"users": sorted(item["user_id"] for item in _user_profiles())}
 
 
 @app.get("/users/details", response_model=list[UserProfile])
-def user_details():
+def user_details(x_admin_pin: str | None = Header(default=None)):
+    _require_admin(x_admin_pin)
     return [UserProfile(**item) for item in _user_profiles()]
 
 
@@ -501,6 +514,52 @@ def offline_verify(req: OfflineVerifyRequest):
     status = ScheduleStatus(authorized=allowed, reason=reason, timezone=zone, evaluated_at=occurred_at)
     return _response(outcome, ev, {"total": 0.0}, schedule=status,
                      offline=OfflineStatus(local=True, sync_status="pending", event_id=event_id))
+
+
+@app.post("/offline/verify-frames", response_model=VerifyResponse)
+def offline_verify_frames(req: VerifyRequest):
+    """SURPRISE CHALLENGE 2 — the kiosk lost the central service and calls THIS (local/edge) API.
+    * safe local decision: same models run on this machine, with the locally cached faces + schedules
+    * no unsafe automatic access: ALLOW only with confident liveness AND identity AND a valid schedule;
+      anything uncertain -> REQUEST_VERIFICATION, i.e. the local gesture challenge (fallback verification)
+    * minimum temporary info: no images stored offline, only {decision, user, time, reasons, decision_id}
+    * synchronised later: queued as 'pending' and uploaded to the central service when it is back."""
+    _require_engine()
+    a = pipeline.analyze(req.frames, req.claimed_user_id)
+    ev = a.evidence
+    outcome = decide(ev, th)
+    if outcome.decision == "ALLOW":
+        strict_ok = (ev.liveness or 0) >= th.liveness_hi and (ev.identity_sim or 0) >= th.identity_hi + 0.05
+        if not strict_ok:
+            outcome = Outcome("REQUEST_VERIFICATION", outcome.confidence, ["offline_strict_policy"],
+                              "Offline — additional local verification required", needs_challenge=True)
+    profile_reason = _profile_reason(ev.identity_user)
+    if profile_reason and outcome.decision == "ALLOW":
+        outcome = Outcome("DENY", 1.0, [profile_reason], f"Access denied — {profile_reason.replace('_', ' ')}")
+    outcome, schedule = _apply_schedule(outcome, ev.identity_user)
+    ch = None
+    if outcome.decision == "REQUEST_VERIFICATION":
+        p = challenges.create(ev.identity_user, ev.claimed)
+        ch = Challenge(nonce=p.nonce, actions=p.actions)
+    resp = _response(outcome, ev, a.timings, ch, schedule)
+    event_id = access.queue_event(ev.identity_user, resp.decision, datetime.now(timezone.utc), {
+        "mode": "offline", "reasons": resp.reasons, "confidence": resp.confidence,
+        "decision_id": (resp.attestation or {}).get("payload", "") and json.loads(resp.attestation["payload"])["decision_id"]})
+    resp.offline = OfflineStatus(local=True, sync_status="pending", event_id=event_id)
+    return resp          # NOTE: no _audit() -> no frames written to disk offline
+
+
+@app.get("/offline/pending")
+def offline_pending():
+    """Queued offline decisions (no images) for the kiosk to forward to the central service."""
+    return {"events": access.pending_events(200)}
+
+
+@app.post("/offline/ack")
+def offline_ack(body: dict):
+    """Central service accepted these events -> mark synced locally (minimum retention)."""
+    access.mark_synced(list(body.get("event_ids", [])))
+    return access.event_status()
 
 
 @app.get("/offline/status")

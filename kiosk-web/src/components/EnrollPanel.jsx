@@ -15,8 +15,19 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
 
-  const refresh = () => api.userDetails().then(setUsers).catch(() => {});
-  useEffect(() => { refresh(); }, []);
+  // the enrolled list is admin-only: shown only after the admin PIN is accepted by the API
+  const [unlocked, setUnlocked] = useState(false);
+  const refresh = () => api.userDetails().then((u) => { setUsers(u); setUnlocked(true); })
+    .catch(() => { setUsers([]); setUnlocked(false); });
+  useEffect(() => { if (pin) refresh(); }, []);
+  const unlock = () => {
+    const p = window.prompt("Admin PIN to view enrolled people") || "";
+    if (!p) return;
+    setPin(p); setAdminPin(p);
+    api.userDetails().then((u) => { setUsers(u); setUnlocked(true); setStatus(""); })
+      .catch(() => { setPin(""); setAdminPin(""); setUnlocked(false); setStatus("Wrong admin PIN"); });
+  };
+  const lock = () => { setPin(""); setAdminPin(""); setUsers([]); setUnlocked(false); };
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -120,7 +131,10 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
       </label>
       <button disabled={!user.trim() || busy} onClick={enroll}>{busy ? "Capturing…" : "Capture & enroll"}</button>
       <p className="status">{status}</p>
-      <h3>Enrolled ({users.length})</h3>
+      {!unlocked ? (
+        <button className="link" onClick={unlock}>🔒 Show enrolled people (admin PIN)</button>
+      ) : (<>
+      <h3>Enrolled ({users.length}) <button className="link" onClick={lock}>lock</button></h3>
       <ul className="users">{users.map((u) => {
         const expired = u.expires_at && new Date(u.expires_at).getTime() <= now;
         return <li key={u.user_id}>
@@ -130,6 +144,7 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
         <button className="remove-user" onClick={() => removeUser(u.user_id)}>Remove</button>
       </li>;
       })}</ul>
+      </>)}
     </div>
   );
 }

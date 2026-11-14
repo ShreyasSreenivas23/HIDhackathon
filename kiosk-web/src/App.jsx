@@ -4,7 +4,7 @@ import ChallengePanel from "./components/ChallengePanel";
 import EnrollPanel from "./components/EnrollPanel";
 import OtpPanel from "./components/OtpPanel";
 import ResultPanel from "./components/ResultPanel";
-import { api, API_BASE, cacheSchedules, queueOfflineEvent, syncOfflineEvents , setStubMode } from "./lib/api";
+import { api, API_BASE, cacheSchedules, queueOfflineEvent, syncOfflineEvents , setStubMode , HAS_LOCAL_FALLBACK, syncLocalDecisions } from "./lib/api";
 import { startCamera } from "./lib/camera";
 import { burst, grabFrame } from "./lib/capture";
 import { actionDone, analyzeFrame, initFaceTracker, QUALITY, qualityIssues } from "./lib/faceTracker";
@@ -73,6 +73,17 @@ export default function App() {
     } catch (e) {
       if (e.offline) {
         setOnline(false);
+        // central service unreachable -> SAFE LOCAL DECISION on the edge API (if this kiosk has one)
+        if (HAS_LOCAL_FALLBACK) {
+          try {
+            const a2 = analysisRef.current || {};
+            const frames2 = await burst(videoRef.current, 5, 100);
+            const local = await api.offlineVerifyFrames(frames2, { blur: a2.blur, brightness: a2.brightness, face_px: a2.facePx, yaw: a2.yaw });
+            setPendingSync((count) => count + 1);
+            showResult({ ...local, message: `OFFLINE (local) — ${local.message}` }, performance.now() - t0);
+            return;
+          } catch { /* local edge also down -> fail closed below */ }
+        }
         const eventId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
         queueOfflineEvent({
           event_id: eventId,
@@ -103,7 +114,7 @@ export default function App() {
 
   // ---------------------------------------------------------------- challenge
   const startChallenge = (ch) => {
-    challengeRef.current = { ...ch, index: 0, events: [], periodic: [], actionFrames: [], start: performance.now(), lastGrab: 0, done: false };
+    challengeRef.current = { ...ch, offline: !!resultRef.current?.offline?.local, index: 0, events: [], periodic: [], actionFrames: [], start: performance.now(), lastGrab: 0, done: false };
     setChallengeUi({ actions: ch.actions, index: 0, secondsLeft: CHALLENGE_S });
     setPhase("challenge");
   };
@@ -117,7 +128,7 @@ export default function App() {
     try {
       // frames that show each action + the most recent periodic frames (server needs the head turns)
       const frames = [...c.periodic, ...c.actionFrames].slice(-CHALLENGE_MAX_FRAMES);
-      const r = await api.challenge(c.nonce, frames, c.events);
+      const r = await api.challenge(c.nonce, frames, c.events, c.offline);
       showResult(r, performance.now() - t0);
     } catch (e) {
       setError(String(e));
@@ -158,6 +169,7 @@ export default function App() {
         goodSinceRef.current = null;
         setPhase("scanning");
       }
+      syncLocalDecisions().catch(() => {});
       return syncOfflineEvents().then((sync) => setPendingSync(sync.pending || value.offline_events_pending || 0)).catch(() => {});
     }).catch(() => { setOnline(false); setHealth({ ok: false }); });
     checkHealth();

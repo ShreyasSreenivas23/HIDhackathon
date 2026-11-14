@@ -54,21 +54,26 @@ export const API_BASE = BASE;
 export const OFFLINE_API_BASE = OFFLINE_BASE;
 export const api = {
   health: () => call("/health", null, "GET"),
-  users: () => call("/users", null, "GET"),
-  userDetails: () => call("/users/details", null, "GET"),
+  users: () => call("/users", null, "GET", BASE, adminHeaders()),
+  userDetails: () => call("/users/details", null, "GET", BASE, adminHeaders()),
   updateUser: (user_id, changes) => call(`/users/${encodeURIComponent(user_id)}`, changes, "PATCH", BASE, adminHeaders()),
   deleteUser: (user_id) => call(`/users/${encodeURIComponent(user_id)}`, null, "DELETE", BASE, adminHeaders()),
   schedules: () => call("/access/schedules", null, "GET"),
   schedule: (user_id) => call(`/access/schedules/${encodeURIComponent(user_id)}`, null, "GET"),
   enroll: (user_id, frames, options = {}) => call("/enroll", { user_id, frames, ...options }, "POST", BASE, adminHeaders()),
   verify: (frames, client_quality, claimed_user_id = null) => signed(call("/verify", { frames, client_quality, claimed_user_id })),
-  challenge: (nonce, frames, client_events) => signed(call("/challenge", { nonce, frames, client_events })),
+  challenge: (nonce, frames, client_events, offline = false) =>
+    signed(call("/challenge", { nonce, frames, client_events }, "POST", offline ? OFFLINE_BASE : BASE)),
+  // offline mode: full pipeline on the local (edge) API, stricter policy, decision queued for sync
+  offlineVerifyFrames: (frames, client_quality) => signed(call("/offline/verify-frames", { frames, client_quality }, "POST", OFFLINE_BASE)),
+  localPending: () => call("/offline/pending", null, "GET", OFFLINE_BASE),
+  localAck: (event_ids) => call("/offline/ack", { event_ids }, "POST", OFFLINE_BASE),
   otpRequest: (user_id) => call("/otp/request", { user_id }),
   otpVerify: (user_id, code) => signed(call("/otp/verify", { user_id, code })),
   offlineVerify: (payload) => signed(call("/offline/verify", payload, "POST", OFFLINE_BASE)),
   pqcPublicKey: pqcKey,
   offlineStatus: () => call("/offline/status", null, "GET", OFFLINE_BASE),
-  offlineSync: (events) => call("/offline/sync", { events }, "POST", OFFLINE_BASE),
+  offlineSync: (events) => call("/offline/sync", { events }, "POST", BASE),   // to the CENTRAL service
 };
 
 export function cacheSchedules(schedules) {
@@ -86,6 +91,19 @@ export function queueOfflineEvent(event) {
   try { events = JSON.parse(localStorage.getItem(key) || "[]"); } catch { events = []; }
   if (!events.some((item) => item.event_id === event.event_id)) events.push(event);
   localStorage.setItem(key, JSON.stringify(events.slice(-100)));
+}
+
+export const HAS_LOCAL_FALLBACK = OFFLINE_BASE !== BASE;
+
+/** Central service is back: forward decisions made offline by the local edge API, then ack them locally. */
+export async function syncLocalDecisions() {
+  if (!HAS_LOCAL_FALLBACK) return { forwarded: 0 };
+  const { events = [] } = await api.localPending();
+  if (!events.length) return { forwarded: 0 };
+  const result = await api.offlineSync(events);
+  const done = [...(result.accepted || []), ...(result.rejected || []).map((r) => r.event_id)];
+  if (done.length) await api.localAck(done);
+  return { forwarded: done.length, rejected: (result.rejected || []).length };
 }
 
 export async function syncOfflineEvents() {

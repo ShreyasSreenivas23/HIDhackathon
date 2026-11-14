@@ -126,3 +126,15 @@ def test_challenge_always_turn_plus_smile():
     for _ in range(20):
         a = ChallengeManager().create(None, False).actions
         assert "smile" in a and any(x.startswith("turn_") for x in a)
+
+
+def test_enrolled_lists_are_admin_only_and_health_hides_ids():
+    import os
+    os.environ.setdefault("STUB_MODE", "1")
+    from fastapi.testclient import TestClient
+    from app.main import app
+    anon = TestClient(app)
+    for path in ("/users", "/users/details", "/access/schedules"):
+        assert anon.get(path).status_code == 401
+    assert "schedules" not in anon.get("/health").json()
+    assert TestClient(app, headers={"X-Admin-Pin": "2468"}).get("/users/details").status_code == 200
