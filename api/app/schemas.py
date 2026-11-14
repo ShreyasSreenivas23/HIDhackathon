@@ -22,6 +22,8 @@ class EnrollRequest(BaseModel):
     authority: Literal["student", "teacher", "admin"] = "student"
     active: bool = True
     expires_in_seconds: Optional[int] = Field(default=None, ge=1, le=31536000)
+    # campus permission granted at enrollment: "24x7" (default), "campus_hours" (Mon-Fri 08:00-18:00), "none"
+    schedule_preset: Literal["24x7", "campus_hours", "none"] = "24x7"
 
 
 class EnrollResponse(BaseModel):

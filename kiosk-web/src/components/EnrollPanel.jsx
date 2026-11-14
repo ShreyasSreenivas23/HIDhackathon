@@ -10,6 +10,7 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
   const [authority, setAuthority] = useState("student");
   const [active, setActive] = useState(true);
   const [duration, setDuration] = useState("");
+  const [schedule, setSchedule] = useState("24x7");
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
 
@@ -37,6 +38,7 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
     try {
       const r = await api.enroll(user.trim(), frames, {
         authority,
+        schedule_preset: schedule,
         active,
         ...(duration ? { expires_in_seconds: Number(duration) } : {}),
       });
@@ -97,6 +99,13 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
           <option value="60">1 minute</option>
           <option value="3600">1 hour</option>
           <option value="86400">1 day</option>
+        </select>
+      </label>
+      <label>Campus access
+        <select value={schedule} onChange={(e) => setSchedule(e.target.value)}>
+          <option value="24x7">Any time (24/7)</option>
+          <option value="campus_hours">Campus hours (Mon–Fri 08:00–18:00)</option>
+          <option value="none">No access (recognised but denied)</option>
         </select>
       </label>
       <button disabled={!user.trim() || busy} onClick={enroll}>{busy ? "Capturing…" : "Capture & enroll"}</button>

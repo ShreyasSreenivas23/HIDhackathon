@@ -89,3 +89,18 @@ def test_offline_sync_rejects_stale_allow(tmp_path, monkeypatch):
     })
     assert response.status_code == 200
     assert response.json()["rejected"][0]["reason"] == "stale_or_invalid_permission"
+
+
+def test_enroll_grants_schedule_preset():
+    import os
+    os.environ.setdefault("STUB_MODE", "1")
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    c.post("/enroll", json={"user_id": "preset_default", "frames": ["x"]})
+    assert c.get("/access/schedules/preset_default").status_code == 200          # default 24x7 granted
+    c.post("/enroll", json={"user_id": "preset_none", "frames": ["x"], "schedule_preset": "none"})
+    assert c.get("/access/schedules/preset_none").status_code == 404             # fail-closed kept
+    c.post("/enroll", json={"user_id": "preset_campus", "frames": ["x"], "schedule_preset": "campus_hours"})
+    w = c.get("/access/schedules/preset_campus").json()["weekly"]
+    assert set(w) == {"monday", "tuesday", "wednesday", "thursday", "friday"}

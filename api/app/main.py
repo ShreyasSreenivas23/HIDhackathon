@@ -248,16 +248,35 @@ def delete_schedule(user_id: str):
     return {"ok": True}
 
 
+DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+CAMPUS_TZ = os.getenv("CAMPUS_TIMEZONE", "Asia/Kolkata")
+
+
+def _grant_preset(user_id: str, preset: str) -> None:
+    """Enrolling grants the chosen campus permission, so a freshly enrolled person isn't silently denied
+    'no_campus_permission'. 'none' keeps the fail-closed behaviour (no schedule -> DENY)."""
+    if preset == "none":
+        access.delete_schedule(user_id)
+        return
+    if preset == "campus_hours":
+        weekly = {d: [{"start": "08:00", "end": "18:00"}] for d in DAYS[:5]}
+    else:  # 24x7: start == end means the whole day
+        weekly = {d: [{"start": "00:00", "end": "00:00"}] for d in DAYS}
+    access.put_schedule(schedule_from_payload(user_id, {"enabled": True, "timezone": CAMPUS_TZ, "weekly": weekly, "exceptions": {}}))
+
+
 @app.post("/enroll", response_model=EnrollResponse)
 def enroll(req: EnrollRequest):
     expires_at = (datetime.now(timezone.utc) + timedelta(seconds=req.expires_in_seconds)).isoformat() if req.expires_in_seconds else None
     if settings.stub_mode:
         stub_profiles[req.user_id] = {"user_id": req.user_id, "authority": req.authority, "active": req.active,
                                       "expires_at": expires_at, "created_at": datetime.now(timezone.utc).isoformat()}
+        _grant_preset(req.user_id, req.schedule_preset)
         return EnrollResponse(ok=True, user_id=req.user_id, frames_used=len(req.frames), quality=0.9)
     _require_engine()
     ok, n, q, msg = pipeline.enroll(req.user_id, req.frames, authority=req.authority, active=req.active, expires_at=expires_at)
     if ok:
+        _grant_preset(req.user_id, req.schedule_preset)
         import base64 as _b64
 
         aws.store_enrolled_face(req.user_id, _b64.b64decode(req.frames[0].split(",", 1)[-1]))
