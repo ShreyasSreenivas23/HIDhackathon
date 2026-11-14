@@ -20,3 +20,11 @@ def test_stub_flow():
     code = c.post("/otp/request", json={"user_id": "a"}).json()["demo_code"]
     assert c.post("/otp/verify", json={"user_id": "a", "code": code}).json()["decision"] == "ALLOW"
     assert c.post("/otp/verify", json={"user_id": "a", "code": "000000"}).json()["decision"] == "DENY"
+
+
+def test_metrics_endpoint_counts_decisions():
+    m0 = c.get("/metrics").json()["total_requests"]
+    c.post("/verify?force=DENY", json={"frames": ["x"]})
+    m = c.get("/metrics").json()
+    assert m["aws"] == {"audit_table": None, "faces_bucket": None, "rekognition": False}
+    assert m["total_requests"] >= m0

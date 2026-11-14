@@ -73,3 +73,15 @@ npm run dev        # http://localhost:5173 (proxies /api → :8000)
 | `AUDIT_BUCKET` | — | S3 bucket for audit frames (optional) |
 | `THRESHOLDS_FILE` | `api/thresholds.json` | calibrated thresholds (written by eval) |
 | `ENABLE_DINO` / `ENABLE_DEVICE` / `ENABLE_PLANARITY` | `1` | toggle signals (for ablations) |
+
+## AWS integrations (optional, from siri's `backend/`)
+Ported into `api/app/aws_services.py`. Every integration is off unless its variable is set, runs in the background or only in the uncertain zone, and can never break a decision.
+
+| Variable | Effect |
+|---|---|
+| `AWS_AUDIT_TABLE=AccessAuditLogs` | every decision is written to DynamoDB (audit trail) |
+| `ENROLLED_FACES_BUCKET=hid-goaldigger-enrolled-faces` | enrollment uploads a reference photo `<user_id>.jpg` to S3 |
+| `REKOGNITION_ENABLED=1` | Amazon Rekognition CompareFaces as a second opinion when our face match is uncertain |
+| `AWS_REGION` | default `us-east-1`; credentials come from the normal boto3 chain or the EC2 instance role |
+
+`GET /metrics` returns decision counts, top reasons and p50/p95 server latency since startup.

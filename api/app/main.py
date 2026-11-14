@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .access import AccessRepository, schedule_from_payload, schedule_payload
+from .aws_services import AwsServices, Metrics
 from .challenge import ChallengeManager, events_in_order, server_turn_check
 from .config import settings
 from .decision import Evidence, Outcome, decide
@@ -39,6 +40,8 @@ if not settings.stub_mode:
     log.info("components: %s  face backend: %s", pipeline.components(), pipeline.faces.name)
 stub_profiles: dict[str, dict] = {}
 challenges = ChallengeManager()
+aws = AwsServices(settings.aws_region)
+metrics = Metrics()
 access = AccessRepository(settings.sqlite_path)
 th = settings.thresholds
 
@@ -117,6 +120,8 @@ def _response(
         schedule=schedule,
         offline=offline,
     )
+    metrics.record(resp)
+    aws.audit("decision", resp)
     # structured log line -> CloudWatch Logs in cloud mode (metric filters on decision / total ms)
     log.info("DECISION %s", json.dumps({"decision": resp.decision, "reasons": resp.reasons,
                                         "liveness": resp.liveness.score, "signals": resp.liveness.signals,
@@ -177,9 +182,16 @@ def health():
         "enrolled": len(_user_profiles()),
         "thresholds": th.to_dict(),
         "connectivity": "online",
+        "aws": aws.enabled,
         "offline_events_pending": pending,
         "schedules": [schedule_payload(item) for item in access.all_schedules()],
     }
+
+
+@app.get("/metrics")
+def get_metrics():
+    """Decision counts, top reasons and server latency percentiles since startup."""
+    return metrics.snapshot() | {"aws": aws.enabled}
 
 
 @app.get("/access/schedules", response_model=list[AccessScheduleResponse])
@@ -221,6 +233,10 @@ def enroll(req: EnrollRequest):
         return EnrollResponse(ok=True, user_id=req.user_id, frames_used=len(req.frames), quality=0.9)
     _require_engine()
     ok, n, q, msg = pipeline.enroll(req.user_id, req.frames, authority=req.authority, active=req.active, expires_at=expires_at)
+    if ok:
+        import base64 as _b64
+
+        aws.store_enrolled_face(req.user_id, _b64.b64decode(req.frames[0].split(",", 1)[-1]))
     return EnrollResponse(ok=ok, user_id=req.user_id, frames_used=n, quality=round(q, 3), message=msg)
 
 
@@ -278,6 +294,18 @@ def verify(req: VerifyRequest, force: str | None = None):
         return response
     _require_engine()
     a = pipeline.analyze(req.frames, req.claimed_user_id)
+    ev0 = a.evidence
+    if (aws.rekognition_enabled and ev0.identity_user and ev0.identity_sim is not None
+            and th.identity_lo <= ev0.identity_sim < th.identity_hi and a.best_idx is not None):
+        from .imaging import encode_jpeg
+
+        t_rek = time.perf_counter()
+        rek = aws.compare_with_enrolled(ev0.identity_user, encode_jpeg(a.frames[a.best_idx]))
+        a.timings["rekognition"] = round((time.perf_counter() - t_rek) * 1000, 1)
+        if rek is not None:
+            ev0.signals["rekognition"] = rek
+            if rek >= aws.rek_min_similarity:      # AWS confirms the uncertain match -> treat as confident
+                ev0.identity_sim = th.identity_hi
     t0 = time.perf_counter()
     outcome = decide(a.evidence, th)
     profile_reason = _profile_reason(a.evidence.identity_user)
