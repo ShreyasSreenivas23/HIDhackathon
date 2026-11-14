@@ -23,6 +23,14 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
   }, []);
 
   const enroll = async () => {
+    // admin authentication only for the enroll ACTION (the page itself is open)
+    let adminPin = pin;
+    if (!adminPin) {
+      adminPin = window.prompt("Admin PIN required to enroll") || "";
+      if (!adminPin) return;
+      setPin(adminPin);
+      setAdminPin(adminPin);
+    }
     setBusy(true);
     setStatus("Hold still…");
     const frames = [];
@@ -46,6 +54,7 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
       setStatus(r.ok ? `✓ Enrolled ${r.user_id} (${r.frames_used} frames)` : `✕ ${r.message}`);
       refresh();
     } catch (e) {
+      if (String(e).includes("401")) { setPin(""); setAdminPin(""); }   // wrong PIN: ask again next time
       setStatus(String(e));
     }
     setBusy(false);
@@ -85,10 +94,6 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
   return (
     <div className="enroll">
       <h2>Enroll a person</h2>
-      <label>Admin PIN (required)
-        <input type="password" inputMode="numeric" autoComplete="off" placeholder="Admin PIN" value={pin}
-               onChange={(ev) => { setPin(ev.target.value); setAdminPin(ev.target.value); }} />
-      </label>
       <input placeholder="Employee ID / name" value={user} onChange={(e) => setUser(e.target.value)} />
       <label>Authority
         <select value={authority} onChange={(e) => setAuthority(e.target.value)}>
@@ -113,7 +118,7 @@ export default function EnrollPanel({ videoRef, analysisRef }) {
           <option value="none">No access (recognised but denied)</option>
         </select>
       </label>
-      <button disabled={!user.trim() || !pin || busy} onClick={enroll}>{busy ? "Capturing…" : "Capture & enroll"}</button>
+      <button disabled={!user.trim() || busy} onClick={enroll}>{busy ? "Capturing…" : "Capture & enroll"}</button>
       <p className="status">{status}</p>
       <h3>Enrolled ({users.length})</h3>
       <ul className="users">{users.map((u) => {
