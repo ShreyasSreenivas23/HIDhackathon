@@ -171,7 +171,17 @@ def challenge(req: ChallengeRequest):
     kps = [f.kps if f is not None else None for f in a.faces]
     ok_events = events_in_order(p.actions, events)
     ok_turns = server_turn_check(p.actions, kps, th.challenge_yaw)
-    ok_live = ev.liveness is not None and ev.liveness >= th.challenge_liveness_min
+    # Liveness proof on the challenge = the gestures themselves:
+    #  * random action ORDER, done live within 10 s       -> defeats pre-recorded video
+    #  * server-side head-turn check (ok_turns): yaw_proxy = (nose - eye_mid) / eye_dist is a RATIO, so
+    #    tilting a flat photo barely changes it, while a real turn moves it by 0.25+  -> defeats photos/screens
+    #  * device detector still applies (ok_device)
+    # Texture (MiniFAS) and nose-parallax are NOT required: measured on real kiosk webcams both were too noisy
+    # (MiniFAS 0.05 for a real person; YuNet 5-point parallax indistinguishable from landmark noise).
+    # A clearly flat face is still a hard fail.
+    plan = ev.signals.get("planarity")
+    flat = plan is not None and plan < th.planar_hard
+    ok_live = not flat
     dev = ev.signals.get("device")
     ok_device = dev is None or dev >= th.device_hard
     same_person = p.candidate_user is None or ev.identity_user == p.candidate_user
@@ -180,13 +190,13 @@ def challenge(req: ChallengeRequest):
     if not ev.face_found:
         outcome = Outcome("DENY", 0.9, ["challenge_failed", "no_face"], "Challenge failed — use OTP instead")
     elif ok_events and ok_turns and ok_live and ok_device and ok_id:
-        outcome = Outcome("ALLOW", round(min(ev.liveness, 0.99), 3), [], "Verified after additional check")
+        outcome = Outcome("ALLOW", round(min(0.9, 0.5 + ev.identity_sim / 2), 3), [], "Verified after additional check")
     else:
         reasons = ["challenge_failed"]
         reasons += [] if ok_events else ["actions_not_completed"]
         reasons += [] if ok_turns else ["head_turn_not_seen"]
         reasons += [] if ok_device else ["phone_detected"]
-        reasons += [] if ok_live else ev.liveness_reasons or ["low_liveness"]
+        reasons += [] if ok_live else ["planar_motion"]
         reasons += [] if ok_id else ["identity_uncertain"]
         outcome = Outcome("DENY", 0.8, reasons, "Challenge failed — use OTP instead")
     resp = _response(outcome, ev, a.timings)

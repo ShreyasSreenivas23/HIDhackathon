@@ -2,10 +2,10 @@
 
 Order of rules:
  1. no face / several faces / poor quality -> REQUEST_VERIFICATION (recapture with guidance, no challenge)
- 2. hard spoof evidence (device) or liveness < lo   -> DENY
+ 2. hard spoof evidence: phone/screen detected, or flat face (planarity) with low liveness -> DENY
  3. no enrolled match / similarity < lo           -> DENY
  4. liveness >= hi and identity >= hi             -> ALLOW
- 5. anything in between                           -> REQUEST_VERIFICATION + active challenge
+ 5. anything in between (incl. low TEXTURE score) -> REQUEST_VERIFICATION + active challenge
 """
 from __future__ import annotations
 
@@ -67,8 +67,11 @@ def decide(ev: Evidence, th: Thresholds) -> Outcome:
         return Outcome("REQUEST_VERIFICATION", 0.0, ["low_quality"] + ev.quality_issues, MESSAGES["RECAPTURE"])
 
     L = ev.liveness if ev.liveness is not None else 0.5
-    if L < th.liveness_lo:
-        return Outcome("DENY", round(1 - L, 3), ev.liveness_reasons or ["low_liveness"], MESSAGES["DENY_SPOOF"])
+    # Hard spoof DENY needs GEOMETRIC evidence (flat face). The texture models alone proved unreliable on real
+    # kiosk webcams (warm/dim light), so low texture only escalates to the active challenge (rule 5).
+    plan = ev.signals.get("planarity")
+    if L < th.liveness_lo and plan is not None and plan < th.planar_hard:
+        return Outcome("DENY", round(1 - L, 3), ev.liveness_reasons or ["planar_motion"], MESSAGES["DENY_SPOOF"])
 
     if ev.identity_sim is None or ev.identity_sim < th.identity_lo:
         reason = "identity_mismatch" if ev.claimed else "unknown_person"
@@ -82,6 +85,7 @@ def decide(ev: Evidence, th: Thresholds) -> Outcome:
     reasons = []
     if L < th.liveness_hi:
         reasons.append("liveness_uncertain")
+        reasons += [r for r in ev.liveness_reasons if r not in reasons]
     if ev.identity_sim < th.identity_hi:
         reasons.append("identity_uncertain")
     return Outcome("REQUEST_VERIFICATION", round(min(L, id_conf), 3), reasons, MESSAGES["CHALLENGE"], needs_challenge=True)

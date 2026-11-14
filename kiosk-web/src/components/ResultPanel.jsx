@@ -1,7 +1,7 @@
 const REASON_TEXT = {
   phone_detected: "Face shown on a phone / screen",
-  texture_spoof: "Print or screen texture detected",
-  planar_motion: "Face is flat (no 3D depth)",
+  texture_spoof: "Image texture looks unusual — quick check needed",
+  planar_motion: "Face looks flat (photo or screen)",
   low_liveness: "Liveness too low",
   identity_mismatch: "Face does not match claimed identity",
   unknown_person: "Person not enrolled",

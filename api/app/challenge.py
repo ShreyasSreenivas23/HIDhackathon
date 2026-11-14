@@ -34,9 +34,9 @@ class ChallengeManager:
         self.otps: dict[str, tuple[str, float]] = {}
 
     def create(self, candidate_user: str | None, claimed: bool) -> PendingChallenge:
-        acts = random.sample(ACTIONS, 2)
-        if set(acts) == {"turn_left", "turn_right"}:   # keep it easy for users
-            acts[1] = random.choice(["blink", "smile"])
+        # always one head turn (gives the server 3D-parallax evidence) + one blink/smile, in random order
+        acts = [random.choice(["turn_left", "turn_right"]), random.choice(["blink", "smile"])]
+        random.shuffle(acts)
         ch = PendingChallenge(secrets.token_hex(4), acts, candidate_user, claimed)
         self.pending[ch.nonce] = ch
         self._gc()

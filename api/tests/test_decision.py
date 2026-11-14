@@ -24,9 +24,15 @@ def test_phone_is_hard_deny():
     assert o.decision == "DENY" and o.reasons[0] == "phone_detected"
 
 
-def test_low_liveness_deny():
-    o = decide(ev(liveness=0.1, liveness_reasons=["texture_spoof"]), TH)
-    assert o.decision == "DENY" and "texture_spoof" in o.reasons
+def test_low_texture_alone_escalates_not_denies():
+    # texture models were unreliable on real webcams -> low texture alone must go to the challenge
+    o = decide(ev(liveness=0.1, liveness_reasons=["texture_spoof"], signals={"minifas": 0.1, "device": 1.0}), TH)
+    assert o.decision == "REQUEST_VERIFICATION" and o.needs_challenge and "texture_spoof" in o.reasons
+
+
+def test_flat_face_with_low_liveness_denies():
+    o = decide(ev(liveness=0.1, liveness_reasons=["planar_motion"], signals={"minifas": 0.2, "planarity": 0.05, "device": 1.0}), TH)
+    assert o.decision == "DENY" and "planar_motion" in o.reasons
 
 
 def test_unknown_person_deny():
@@ -101,3 +107,12 @@ def test_challenge_helpers():
     assert server_turn_check(["turn_left"], [_face(0), left], 0.2)
     assert not server_turn_check(["turn_left"], [_face(0), right], 0.2)
     assert server_turn_check(["turn_right", "blink"], [_face(0), right], 0.2)
+
+
+def test_every_challenge_has_a_head_turn():
+    from app.challenge import ChallengeManager
+
+    cm = ChallengeManager()
+    for _ in range(50):
+        acts = cm.create(None, False).actions
+        assert len(acts) == 2 and sum(a.startswith("turn_") for a in acts) == 1

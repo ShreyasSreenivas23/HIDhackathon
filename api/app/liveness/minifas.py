@@ -17,8 +17,13 @@ log = logging.getLogger(__name__)
 
 
 class MiniFAS:
-    def __init__(self, model_path: Path, expansion: float = 1.5, size: int = 128, logit_offset: float = 0.0):
-        self.expansion, self.size, self.logit_offset = expansion, size, logit_offset
+    """Measured on real kiosk webcam bursts (warm dim hall light): single-crop, per-frame scores swing 0.01-0.99
+    for the same still person. So we average logits over two crop scales (1.5x = upstream default, 2.7x =
+    MiniFASNet-V2 original context) and take the MEDIAN over frames. Treat it as a soft signal only — the
+    decision engine never hard-DENIES on texture alone."""
+
+    def __init__(self, model_path: Path, expansions: tuple[float, ...] = (1.5, 2.7), size: int = 128, logit_offset: float = 0.0):
+        self.expansions, self.size, self.logit_offset = expansions, size, logit_offset
         self.session = None
         if not model_path.exists():
             log.warning("MiniFAS model missing at %s (run scripts/download_models.py)", model_path)
@@ -32,22 +37,22 @@ class MiniFAS:
     def available(self) -> bool:
         return self.session is not None
 
-    def _prep(self, img_bgr: np.ndarray, bbox) -> np.ndarray:
-        crop = square_crop(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), bbox, self.expansion)
+    def _prep(self, rgb: np.ndarray, bbox, expansion: float) -> np.ndarray:
+        crop = square_crop(rgb, bbox, expansion)
         return letterbox(crop, self.size).transpose(2, 0, 1).astype(np.float32) / 255.0
 
     def score(self, frames: list[np.ndarray], bboxes: list) -> float | None:
-        """Mean P(live) over frames that have a face. bboxes[i] is None when frame i has no face."""
+        """P(live) = sigmoid(median over frames of the crop-averaged logit). bboxes[i] is None if no face."""
         if not self.available:
             return None
-        batch = [self._prep(f, b) for f, b in zip(frames, bboxes) if b is not None]
-        if not batch:
+        pairs = [(cv2.cvtColor(f, cv2.COLOR_BGR2RGB), b) for f, b in zip(frames, bboxes) if b is not None]
+        if not pairs:
             return None
-        x = np.stack(batch)
+        x = np.stack([self._prep(rgb, b, e) for rgb, b in pairs for e in self.expansions])
         try:
             logits = self.session.run(None, {self.input_name: x})[0]
         except Exception:  # model exported with fixed batch=1
             logits = np.concatenate([self.session.run(None, {self.input_name: x[i : i + 1]})[0] for i in range(len(x))])
-        diff = logits[:, 0] - logits[:, 1] - self.logit_offset
-        p_live = 1.0 / (1.0 + np.exp(-diff))
-        return float(p_live.mean())
+        diff = (logits[:, 0] - logits[:, 1]).reshape(len(pairs), len(self.expansions)).mean(axis=1)
+        z = float(np.median(diff)) - self.logit_offset
+        return float(1.0 / (1.0 + np.exp(-z)))

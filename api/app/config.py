@@ -23,8 +23,8 @@ class Thresholds:
     identity_hi: float = 0.40          # at/above -> confident match
     # signals
     device_hard: float = 0.30          # device signal below this -> hard DENY (face is inside a phone/laptop/tv)
+    planar_hard: float = 0.20          # planarity below this (clearly flat face) + low liveness -> hard DENY
     signal_flag: float = 0.40          # any signal below this is listed in `reasons`
-    challenge_liveness_min: float = 0.55
     challenge_yaw: float = 0.20        # server-side |yaw_proxy| needed to accept a turn action
     # quality gate (server side; client has its own copy)
     min_face_px: int = 90
